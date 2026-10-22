@@ -1,5 +1,8 @@
 <script setup>
 import { ref, onMounted, onBeforeUnmount } from 'vue'
+import { useRouter } from 'vue-router'
+
+const router = useRouter()
 
 const address = ref('')
 const selectedCoords = ref({ lat: null, lon: null })
@@ -134,7 +137,8 @@ async function handleSubmit() {
   } catch {
     savedAddress.value = trimmed
   }
-  statusMessage.value = 'Address saved.'
+
+  router.push('/map')
 }
 </script>
 
