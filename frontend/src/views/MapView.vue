@@ -6,6 +6,8 @@ import 'mapbox-gl/dist/mapbox-gl.css'
 const currentAddress = ref('')
 const captureDate = ref('')
 const ecoregions = ref(null)
+const birdOfTheDay = ref(null)
+const showBirdModal = ref(false)
 const parcelFeature = ref(null)
 const mapElement = ref(null)
 const errorMessage = ref('')
@@ -146,7 +148,14 @@ async function refreshCaptureDate(lat, lon) {
   }
 }
 
+function handleKeydown(e) {
+  if (e.key === 'Escape' && showBirdModal.value) {
+    showBirdModal.value = false
+  }
+}
+
 onMounted(async () => {
+  window.addEventListener('keydown', handleKeydown)
   let lat = null
   let lon = null
 
@@ -160,6 +169,7 @@ onMounted(async () => {
       captureDate.value = data.captureDate || ''
       parcelFeature.value = data.parcel || null
       ecoregions.value = data.ecoregions || null
+      birdOfTheDay.value = data.birdOfTheDay || null
     }
   } catch {
     const local = localStorage.getItem('harmonee_address')
@@ -285,6 +295,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => {
+  window.removeEventListener('keydown', handleKeydown)
   if (mapInstance) {
     mapInstance.remove()
     mapInstance = null
@@ -326,6 +337,70 @@ onBeforeUnmount(() => {
         <p v-if="ecoregions.description" class="ecoregion-description">
           {{ ecoregions.description }}
         </p>
+      </div>
+
+      <div v-if="birdOfTheDay" class="bird-panel">
+        <div class="panel-heading">Bird of the Day</div>
+        <div class="bird-content">
+          <button
+            type="button"
+            class="bird-image-frame"
+            title="Click to view full Audubon illustration"
+            @click="showBirdModal = true"
+          >
+            <img
+              :src="birdOfTheDay.proxyImageUrl || birdOfTheDay.imageUrl"
+              :alt="`${birdOfTheDay.commonName} — Audubon illustration`"
+              class="bird-illustration"
+            />
+          </button>
+          <div class="bird-details">
+            <div class="bird-name">{{ birdOfTheDay.commonName }}</div>
+            <div class="bird-scientific">{{ birdOfTheDay.scientificName }}</div>
+            <div v-if="birdOfTheDay.plate" class="bird-plate">
+              {{ birdOfTheDay.plate }} (J.J. Audubon)
+            </div>
+            <div v-if="birdOfTheDay.location" class="bird-sighting">
+              Spotted nearby on {{ birdOfTheDay.source || 'eBird' }}: {{ birdOfTheDay.location }}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div
+      v-if="showBirdModal && birdOfTheDay"
+      class="bird-modal-backdrop"
+      @click="showBirdModal = false"
+    >
+      <div class="bird-modal" @click.stop>
+        <div class="bird-modal-header">
+          <div class="bird-modal-titles">
+            <span class="bird-modal-name">{{ birdOfTheDay.commonName }}</span>
+            <span class="bird-modal-scientific">{{ birdOfTheDay.scientificName }}</span>
+          </div>
+          <button
+            type="button"
+            class="bird-modal-close"
+            aria-label="Close full image"
+            @click="showBirdModal = false"
+          >
+            ✕
+          </button>
+        </div>
+        <div class="bird-modal-image-wrap">
+          <img
+            :src="birdOfTheDay.proxyImageUrl || birdOfTheDay.imageUrl"
+            :alt="`${birdOfTheDay.commonName} — Full Audubon illustration`"
+            class="bird-modal-image"
+          />
+        </div>
+        <div class="bird-modal-footer">
+          <span v-if="birdOfTheDay.plate">{{ birdOfTheDay.plate }} — John James Audubon</span>
+          <span v-if="birdOfTheDay.location">
+            Spotted nearby on {{ birdOfTheDay.source || 'eBird' }}: {{ birdOfTheDay.location }}
+          </span>
+        </div>
       </div>
     </div>
 
@@ -387,6 +462,8 @@ onBeforeUnmount(() => {
   flex-direction: column;
   gap: 0.6rem;
   max-width: 340px;
+  max-height: calc(100% - 54px);
+  overflow-y: auto;
 }
 
 .map-sidebar-right {
@@ -406,7 +483,8 @@ onBeforeUnmount(() => {
 
 .info-panel,
 .layers-panel,
-.ecoregion-panel {
+.ecoregion-panel,
+.bird-panel {
   padding: 0.65rem 0.85rem;
   background-color: rgba(30, 58, 47, 0.9);
   border: 1px solid var(--border-sage);
@@ -469,6 +547,177 @@ onBeforeUnmount(() => {
   border-top: 1px solid rgba(61, 102, 86, 0.55);
   font-size: 0.8rem;
   line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.bird-content {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.7rem;
+}
+
+.bird-image-frame {
+  width: 96px;
+  height: 116px;
+  flex-shrink: 0;
+  background-color: var(--text-cream);
+  border: 1px solid var(--border-sage);
+  border-radius: 4px;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  cursor: zoom-in;
+  transition: border-color 0.15s ease;
+}
+
+.bird-image-frame:hover {
+  border-color: var(--text-cream);
+}
+
+.bird-illustration {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 46%;
+  transform: scale(1.65);
+  transition: transform 0.2s ease;
+  display: block;
+}
+
+.bird-image-frame:hover .bird-illustration {
+  transform: scale(1.78);
+}
+
+.bird-details {
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+  min-width: 0;
+}
+
+.bird-name {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--text-cream);
+  line-height: 1.25;
+}
+
+.bird-scientific {
+  font-size: 0.78rem;
+  font-style: italic;
+  color: var(--text-muted);
+}
+
+.bird-plate {
+  margin-top: 0.15rem;
+  font-size: 0.74rem;
+  color: var(--text-cream);
+  opacity: 0.9;
+  line-height: 1.3;
+}
+
+.bird-sighting {
+  margin-top: 0.2rem;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  line-height: 1.3;
+}
+
+.bird-modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background-color: rgba(15, 30, 24, 0.82);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+.bird-modal {
+  background-color: var(--bg-forest);
+  border: 1px solid var(--border-sage);
+  border-radius: 8px;
+  max-width: min(760px, 92vw);
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  padding: 0.9rem 1.1rem;
+  gap: 0.75rem;
+}
+
+.bird-modal-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.bird-modal-titles {
+  display: flex;
+  align-items: baseline;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+}
+
+.bird-modal-name {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--text-cream);
+}
+
+.bird-modal-scientific {
+  font-size: 0.9rem;
+  font-style: italic;
+  color: var(--text-muted);
+}
+
+.bird-modal-close {
+  background: transparent;
+  border: 1px solid var(--border-sage);
+  color: var(--text-cream);
+  border-radius: 4px;
+  width: 28px;
+  height: 28px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.bird-modal-close:hover {
+  background-color: var(--bg-forest-light);
+  border-color: var(--text-cream);
+}
+
+.bird-modal-image-wrap {
+  background-color: var(--text-cream);
+  border: 1px solid var(--border-sage);
+  border-radius: 6px;
+  padding: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.bird-modal-image {
+  max-width: 100%;
+  max-height: 72vh;
+  object-fit: contain;
+  display: block;
+}
+
+.bird-modal-footer {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  font-size: 0.8rem;
   color: var(--text-muted);
 }
 
