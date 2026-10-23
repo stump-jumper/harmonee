@@ -13,6 +13,23 @@ let mapInstance = null
 
 const token = import.meta.env.VITE_MAPBOX_TOKEN
 
+function computeRingAreaSqMeters(ring) {
+  if (!ring || ring.length < 3) return 0
+  const lat0 = (ring[0][1] * Math.PI) / 180
+  const metersPerDegLat = 111132.954 - 559.822 * Math.cos(2 * lat0) + 1.175 * Math.cos(4 * lat0)
+  const metersPerDegLon = 111412.84 * Math.cos(lat0) - 93.5 * Math.cos(3 * lat0)
+
+  let sum = 0
+  for (let i = 0; i < ring.length - 1; i++) {
+    const x1 = ring[i][0] * metersPerDegLon
+    const y1 = ring[i][1] * metersPerDegLat
+    const x2 = ring[i + 1][0] * metersPerDegLon
+    const y2 = ring[i + 1][1] * metersPerDegLat
+    sum += x1 * y2 - x2 * y1
+  }
+  return Math.abs(sum) / 2
+}
+
 const parcelAcreage = computed(() => {
   const feat = parcelFeature.value
   if (!feat) return null
@@ -22,38 +39,34 @@ const parcelAcreage = computed(() => {
     return `${Number(props.ACRES).toFixed(2)} acres`
   }
 
-  // Calculate geodesic area from the GeoJSON polygon coordinates (WGS84)
+  if (props.Shape_Area && !isNaN(Number(props.Shape_Area)) && Number(props.Shape_Area) > 0) {
+    const acres = Number(props.Shape_Area) / 43560
+    return `${acres.toFixed(2)} acres`
+  }
+
+  // Calculate geodesic area across all polygons in Polygon or MultiPolygon (WGS84)
   const geom = feat.geometry
-  const ring =
+  const polygons =
     geom?.type === 'Polygon'
-      ? geom.coordinates?.[0]
+      ? [geom.coordinates]
       : geom?.type === 'MultiPolygon'
-        ? geom.coordinates?.[0]?.[0]
-        : null
+        ? geom.coordinates
+        : []
 
-  if (ring && ring.length >= 3) {
-    const lat0 = (ring[0][1] * Math.PI) / 180
-    const metersPerDegLat = 111132.954
-    const metersPerDegLon = 111319.488 * Math.cos(lat0)
-
-    let sum = 0
-    for (let i = 0; i < ring.length - 1; i++) {
-      const x1 = ring[i][0] * metersPerDegLon
-      const y1 = ring[i][1] * metersPerDegLat
-      const x2 = ring[i + 1][0] * metersPerDegLon
-      const y2 = ring[i + 1][1] * metersPerDegLat
-      sum += x1 * y2 - x2 * y1
+  if (polygons.length > 0) {
+    let totalSqMeters = 0
+    for (const poly of polygons) {
+      if (!poly || !poly.length) continue
+      // Exterior ring minus any interior hole rings
+      totalSqMeters += computeRingAreaSqMeters(poly[0])
+      for (let h = 1; h < poly.length; h++) {
+        totalSqMeters -= computeRingAreaSqMeters(poly[h])
+      }
     }
-    const areaSqMeters = Math.abs(sum) / 2
-    const acres = areaSqMeters / 4046.8564224
+    const acres = totalSqMeters / 4046.8564224
     if (acres > 0) {
       return `${acres.toFixed(2)} acres`
     }
-  }
-
-  if (props.Shape_Area && !isNaN(Number(props.Shape_Area))) {
-    const acres = Number(props.Shape_Area) / 43560
-    return `${acres.toFixed(2)} acres`
   }
 
   return null
