@@ -1,6 +1,7 @@
 from datetime import datetime
 import json
 import os
+import re
 import urllib.parse
 import urllib.request
 from pathlib import Path
@@ -27,6 +28,11 @@ app.add_middleware(
 
 DATA_FILE = Path(__file__).parent / "data.json"
 MAPBOX_TOKEN = os.getenv("MAPBOX_TOKEN", "")
+
+PARCEL_ENDPOINTS = [
+    "https://mapservices.pasda.psu.edu/server/rest/services/pasda/LehighCounty/MapServer/5/query",
+    "https://mapservices.pasda.psu.edu/server/rest/services/pasda/MontgomeryCounty/MapServer/14/query",
+]
 
 
 class AddressPayload(BaseModel):
@@ -80,6 +86,49 @@ def lookup_capture_date(lat: float, lon: float) -> Optional[str]:
                     return str(src_date2)
     except Exception:
         pass
+    return None
+
+
+def lookup_parcel_boundary(lat: float, lon: float, address: str = "") -> Optional[dict]:
+    """Query GIS parcel polygon services for the property boundary at (lat, lon)."""
+    house_match = re.match(r"^\s*(\d+)", address or "")
+    house_num = house_match.group(1) if house_match else None
+
+    for endpoint in PARCEL_ENDPOINTS:
+        # 1. Try exact point-in-polygon intersection first
+        for distance in (0, 35):
+            try:
+                query_params = {
+                    "geometry": f"{lon},{lat}",
+                    "geometryType": "esriGeometryPoint",
+                    "inSR": "4326",
+                    "spatialRel": "esriSpatialRelIntersects",
+                    "outFields": "*",
+                    "outSR": "4326",
+                    "f": "geojson",
+                }
+                if distance > 0:
+                    query_params["distance"] = str(distance)
+                    query_params["units"] = "esriSRUnit_Meter"
+
+                url = f"{endpoint}?{urllib.parse.urlencode(query_params)}"
+                req = urllib.request.Request(url, headers={"User-Agent": "HarmoneeApp/0.1"})
+                with urllib.request.urlopen(req, timeout=6) as resp:
+                    geojson = json.loads(resp.read().decode("utf-8"))
+                    features = geojson.get("features", [])
+                    if not features:
+                        continue
+
+                    if len(features) == 1 or not house_num:
+                        return features[0]
+
+                    for feat in features:
+                        props_str = json.dumps(feat.get("properties", {}))
+                        if f'"{house_num}"' in props_str or f'"{house_num} ' in props_str:
+                            return feat
+                    return features[0]
+            except Exception:
+                continue
     return None
 
 
@@ -169,6 +218,7 @@ def get_address():
     address = data.get("address", "")
     lat = data.get("lat")
     lon = data.get("lon")
+    dirty = False
 
     if address and (lat is None or lon is None):
         matches = lookup_suggestions(address)
@@ -177,20 +227,31 @@ def get_address():
             lon = matches[0].get("lon")
             data["lat"] = lat
             data["lon"] = lon
-            write_data(data)
+            dirty = True
 
     capture_date = data.get("captureDate")
     if lat is not None and lon is not None and not capture_date:
         capture_date = lookup_capture_date(lat, lon)
         if capture_date:
             data["captureDate"] = capture_date
-            write_data(data)
+            dirty = True
+
+    parcel = data.get("parcel")
+    if lat is not None and lon is not None and not parcel:
+        parcel = lookup_parcel_boundary(lat, lon, address)
+        if parcel:
+            data["parcel"] = parcel
+            dirty = True
+
+    if dirty:
+        write_data(data)
 
     return {
         "address": address,
         "lat": lat,
         "lon": lon,
         "captureDate": capture_date,
+        "parcel": parcel,
     }
 
 
@@ -208,17 +269,20 @@ def save_address(payload: AddressPayload):
             lon = matches[0].get("lon")
 
     capture_date = lookup_capture_date(lat, lon) if (lat is not None and lon is not None) else None
+    parcel = lookup_parcel_boundary(lat, lon, cleaned) if (lat is not None and lon is not None) else None
 
     data["address"] = cleaned
     data["lat"] = lat
     data["lon"] = lon
     data["captureDate"] = capture_date
+    data["parcel"] = parcel
     write_data(data)
     return {
         "address": data["address"],
         "lat": data["lat"],
         "lon": data["lon"],
         "captureDate": capture_date,
+        "parcel": parcel,
         "saved": True,
     }
 
