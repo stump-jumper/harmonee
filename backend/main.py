@@ -34,6 +34,55 @@ PARCEL_ENDPOINTS = [
     "https://mapservices.pasda.psu.edu/server/rest/services/pasda/MontgomeryCounty/MapServer/14/query",
 ]
 
+ECOREGION_ENDPOINTS = [
+    "https://services.arcgis.com/neT9SoYxizqTHZPH/arcgis/rest/services/EPA_Region_3_Ecoregion_Level_IV/FeatureServer/0/query",
+    "https://services2.arcgis.com/FiaPA4ga0iQKduv3/arcgis/rest/services/Level_III_Ecoregions_in_the_US_v1/FeatureServer/0/query",
+]
+
+LEVEL_IV_DESCRIPTIONS = {
+    "67a": (
+        "Broad, gently rolling valleys underlain by fertile limestone and dolomite bedrock "
+        "with karst features and spring-fed calcareous streams. Naturally supports rich "
+        "mixed oak-hickory and tulip poplar forests alongside calcareous meadow and riparian habitats."
+    ),
+    "67b": (
+        "Rolling valleys and low hills underlain by shale and siltstone with well-drained, "
+        "slightly acidic soils. Characterized by dendritic stream drainage and native Appalachian "
+        "oak, hickory, and pine woodlands."
+    ),
+    "67c": (
+        "Steep, narrow forested mountain ridges capped by resistant sandstone and conglomerate. "
+        "Thin, rocky soils support chestnut oak, red oak, black birch, and pitch pine canopy "
+        "with mountain laurel and blueberry understory."
+    ),
+    "67d": (
+        "Dissected ridges, hills, and knobs underlain by interbedded sandstone, chert, and shale. "
+        "Supports diverse mixed mesophytic and Appalachian oak-hickory forest communities."
+    ),
+    "64a": (
+        "Undulating plains and low hills underlain by red shale, siltstone, and sandstone. "
+        "Supports mixed oak, hickory, ash, and red maple woodlands with warm-water piedmont streams."
+    ),
+    "64b": (
+        "Steep, wooded diabase ridges and boulder-strewn uplands rising above surrounding lowlands. "
+        "Thin, rocky soils preserve extensive contiguous oak-hickory and beech-maple forest habitats."
+    ),
+    "64c": (
+        "Rounded hills and incised valleys underlain by metamorphic schists and gneisses. "
+        "Naturally vegetated by rich Appalachian oak, tulip poplar, American beech, and hickory "
+        "forests with high-gradient piedmont streams."
+    ),
+    "64d": (
+        "Fertile, gently undulating carbonate basins with karst topography and alkaline soils. "
+        "Historically supported towering oak-tulip poplar forests and spring-fed limestone meadows."
+    ),
+    "58h": (
+        "Rugged crystalline uplands of Precambrian gneiss and granite separating the Ridge and Valley "
+        "from the Piedmont. Features steep wooded slopes, vernal pools, and dense mixed oak, birch, "
+        "and tulip poplar canopy."
+    ),
+}
+
 
 class AddressPayload(BaseModel):
     address: str
@@ -52,6 +101,33 @@ def read_data() -> dict:
 
 def write_data(data: dict) -> None:
     DATA_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+def format_ecoregion_name(name: Optional[str]) -> str:
+    if not name:
+        return ""
+    text = str(name).strip()
+    if text.isupper():
+        text = text.title().replace("Usa", "USA")
+    return text
+
+
+def describe_level4(l4_code: str, l4_name: str, l3_name: str, l1_name: str) -> str:
+    key = (l4_code or "").strip().lower()
+    if key in LEVEL_IV_DESCRIPTIONS:
+        return LEVEL_IV_DESCRIPTIONS[key]
+    if l4_name and l3_name:
+        return (
+            f"Part of the {l3_name} region within {l1_name or 'temperate North America'}, "
+            f"the {l4_name} sub-ecoregion is defined by its local geology, soils, and landform "
+            f"relief, shaping native plant communities and wildlife habitat."
+        )
+    if l3_name:
+        return (
+            f"Located in the {l3_name} ecoregion, characterized by distinct regional topography, "
+            f"soil chemistry, and native woodland and meadow plant assemblages."
+        )
+    return ""
 
 
 def lookup_capture_date(lat: float, lon: float) -> Optional[str]:
@@ -89,13 +165,62 @@ def lookup_capture_date(lat: float, lon: float) -> Optional[str]:
     return None
 
 
+def lookup_ecoregions(lat: float, lon: float) -> Optional[dict]:
+    """Query EPA Level I–IV Ecoregion services for all 4 classification levels at (lat, lon)."""
+    params = urllib.parse.urlencode(
+        {
+            "geometry": f"{lon},{lat}",
+            "geometryType": "esriGeometryPoint",
+            "inSR": "4326",
+            "spatialRel": "esriSpatialRelIntersects",
+            "outFields": "*",
+            "returnGeometry": "false",
+            "f": "json",
+        }
+    )
+    for endpoint in ECOREGION_ENDPOINTS:
+        try:
+            url = f"{endpoint}?{params}"
+            req = urllib.request.Request(url, headers={"User-Agent": "HarmoneeApp/0.1"})
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                payload = json.loads(resp.read().decode("utf-8"))
+                features = payload.get("features", [])
+                if not features:
+                    continue
+                attrs = features[0].get("attributes", {})
+
+                l1_code = attrs.get("NA_L1CODE") or ""
+                l1_name = format_ecoregion_name(attrs.get("NA_L1NAME"))
+
+                l2_code = attrs.get("NA_L2CODE") or ""
+                l2_name = format_ecoregion_name(attrs.get("NA_L2NAME"))
+
+                l3_code = attrs.get("US_L3CODE") or attrs.get("NA_L3CODE") or ""
+                l3_name = format_ecoregion_name(attrs.get("US_L3NAME") or attrs.get("NA_L3NAME"))
+
+                l4_code = attrs.get("US_L4CODE") or ""
+                l4_name = format_ecoregion_name(attrs.get("US_L4NAME"))
+
+                result = {
+                    "level1": f"{l1_code} {l1_name}".strip() if (l1_code or l1_name) else None,
+                    "level2": f"{l2_code} {l2_name}".strip() if (l2_code or l2_name) else None,
+                    "level3": f"{l3_code} {l3_name}".strip() if (l3_code or l3_name) else None,
+                    "level4": f"{l4_code} {l4_name}".strip() if (l4_code or l4_name) else None,
+                    "description": describe_level4(l4_code, l4_name, l3_name, l1_name),
+                }
+                if any(result.values()):
+                    return result
+        except Exception:
+            continue
+    return None
+
+
 def lookup_parcel_boundary(lat: float, lon: float, address: str = "") -> Optional[dict]:
     """Query GIS parcel polygon services for the property boundary at (lat, lon)."""
     house_match = re.match(r"^\s*(\d+)", address or "")
     house_num = house_match.group(1) if house_match else None
 
     for endpoint in PARCEL_ENDPOINTS:
-        # 1. Try exact point-in-polygon intersection first
         for distance in (0, 35):
             try:
                 query_params = {
@@ -243,6 +368,15 @@ def get_address():
             data["parcel"] = parcel
             dirty = True
 
+    ecoregions = data.get("ecoregions")
+    if lat is not None and lon is not None and (
+        not isinstance(ecoregions, dict) or not ecoregions.get("description")
+    ):
+        ecoregions = lookup_ecoregions(lat, lon)
+        if ecoregions:
+            data["ecoregions"] = ecoregions
+            dirty = True
+
     if dirty:
         write_data(data)
 
@@ -252,6 +386,7 @@ def get_address():
         "lon": lon,
         "captureDate": capture_date,
         "parcel": parcel,
+        "ecoregions": ecoregions,
     }
 
 
@@ -270,12 +405,14 @@ def save_address(payload: AddressPayload):
 
     capture_date = lookup_capture_date(lat, lon) if (lat is not None and lon is not None) else None
     parcel = lookup_parcel_boundary(lat, lon, cleaned) if (lat is not None and lon is not None) else None
+    ecoregions = lookup_ecoregions(lat, lon) if (lat is not None and lon is not None) else None
 
     data["address"] = cleaned
     data["lat"] = lat
     data["lon"] = lon
     data["captureDate"] = capture_date
     data["parcel"] = parcel
+    data["ecoregions"] = ecoregions
     write_data(data)
     return {
         "address": data["address"],
@@ -283,6 +420,7 @@ def save_address(payload: AddressPayload):
         "lon": data["lon"],
         "captureDate": capture_date,
         "parcel": parcel,
+        "ecoregions": ecoregions,
         "saved": True,
     }
 

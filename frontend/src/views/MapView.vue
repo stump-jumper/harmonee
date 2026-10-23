@@ -5,6 +5,7 @@ import 'mapbox-gl/dist/mapbox-gl.css'
 
 const currentAddress = ref('')
 const captureDate = ref('')
+const ecoregions = ref(null)
 const parcelFeature = ref(null)
 const mapElement = ref(null)
 const errorMessage = ref('')
@@ -145,6 +146,7 @@ onMounted(async () => {
       lon = data.lon
       captureDate.value = data.captureDate || ''
       parcelFeature.value = data.parcel || null
+      ecoregions.value = data.ecoregions || null
     }
   } catch {
     const local = localStorage.getItem('harmonee_address')
@@ -279,7 +281,7 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="map-page">
-    <div class="map-sidebar">
+    <div class="map-sidebar-left">
       <div v-if="currentAddress" class="info-panel">
         <div class="panel-heading">Property Info</div>
         <div class="address-text">{{ currentAddress }}</div>
@@ -288,6 +290,33 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
+      <div v-if="ecoregions" class="ecoregion-panel">
+        <div class="panel-heading">Ecoregion Info</div>
+        <ul class="ecoregion-list">
+          <li v-if="ecoregions.level1" class="ecoregion-row">
+            <span class="ecoregion-label">Level I:</span>
+            <span class="ecoregion-value">{{ ecoregions.level1 }}</span>
+          </li>
+          <li v-if="ecoregions.level2" class="ecoregion-row">
+            <span class="ecoregion-label">Level II:</span>
+            <span class="ecoregion-value">{{ ecoregions.level2 }}</span>
+          </li>
+          <li v-if="ecoregions.level3" class="ecoregion-row">
+            <span class="ecoregion-label">Level III:</span>
+            <span class="ecoregion-value">{{ ecoregions.level3 }}</span>
+          </li>
+          <li v-if="ecoregions.level4" class="ecoregion-row">
+            <span class="ecoregion-label">Level IV:</span>
+            <span class="ecoregion-value">{{ ecoregions.level4 }}</span>
+          </li>
+        </ul>
+        <p v-if="ecoregions.description" class="ecoregion-description">
+          {{ ecoregions.description }}
+        </p>
+      </div>
+    </div>
+
+    <div class="map-sidebar-right">
       <div class="layers-panel">
         <div class="panel-heading">Layers</div>
         <ul class="layers-list">
@@ -336,7 +365,7 @@ onBeforeUnmount(() => {
   height: 100%;
 }
 
-.map-sidebar {
+.map-sidebar-left {
   position: absolute;
   top: 14px;
   left: 14px;
@@ -347,8 +376,24 @@ onBeforeUnmount(() => {
   max-width: 340px;
 }
 
+.map-sidebar-right {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+:deep(.mapboxgl-ctrl-top-right) {
+  top: 108px;
+  right: 4px;
+}
+
 .info-panel,
-.layers-panel {
+.layers-panel,
+.ecoregion-panel {
   padding: 0.65rem 0.85rem;
   background-color: rgba(30, 58, 47, 0.9);
   border: 1px solid var(--border-sage);
@@ -378,6 +423,39 @@ onBeforeUnmount(() => {
 .acreage-text {
   margin-top: 0.35rem;
   font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.ecoregion-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.ecoregion-row {
+  font-size: 0.85rem;
+  line-height: 1.35;
+}
+
+.ecoregion-label {
+  color: var(--text-muted);
+  font-weight: 600;
+  margin-right: 0.35rem;
+}
+
+.ecoregion-value {
+  color: var(--text-cream);
+}
+
+.ecoregion-description {
+  margin: 0.55rem 0 0 0;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(61, 102, 86, 0.55);
+  font-size: 0.8rem;
+  line-height: 1.4;
   color: var(--text-muted);
 }
 
