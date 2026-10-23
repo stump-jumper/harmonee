@@ -1,5 +1,13 @@
+<script setup>
+import { computed } from 'vue'
+import { useRoute } from 'vue-router'
+
+const route = useRoute()
+const isFullBleed = computed(() => route.name === 'map')
+</script>
+
 <template>
-  <div class="layout">
+  <div :class="['layout', { 'layout-locked': isFullBleed }]">
     <header class="navbar">
       <RouterLink to="/" class="brand">Harmonee</RouterLink>
       <nav class="nav-links">
@@ -10,7 +18,7 @@
       </nav>
     </header>
 
-    <main class="container">
+    <main :class="isFullBleed ? 'full-bleed' : 'container'">
       <RouterView />
     </main>
   </div>
@@ -23,12 +31,19 @@
   flex-direction: column;
 }
 
+.layout-locked {
+  height: 100vh;
+  overflow: hidden;
+}
+
 .navbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
   padding: 1rem 2rem;
   border-bottom: 1px solid var(--border-sage);
+  background-color: var(--bg-green);
+  z-index: 10;
 }
 
 .brand {
@@ -66,5 +81,14 @@
   margin: 0 auto;
   padding: 2.5rem 1.5rem;
   text-align: center;
+}
+
+.full-bleed {
+  flex: 1;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  overflow: hidden;
 }
 </style>

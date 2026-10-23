@@ -1,3 +1,4 @@
+from datetime import datetime
 import json
 import os
 import urllib.parse
@@ -45,6 +46,41 @@ def read_data() -> dict:
 
 def write_data(data: dict) -> None:
     DATA_FILE.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+
+def lookup_capture_date(lat: float, lon: float) -> Optional[str]:
+    """Query aerial/satellite imagery metadata for the capture date at (lat, lon)."""
+    try:
+        extent = f"{lon - 0.005},{lat - 0.005},{lon + 0.005},{lat + 0.005}"
+        params = urllib.parse.urlencode(
+            {
+                "geometry": f"{lon},{lat}",
+                "geometryType": "esriGeometryPoint",
+                "sr": "4326",
+                "layers": "top",
+                "tolerance": "1",
+                "mapExtent": extent,
+                "imageDisplay": "800,600,96",
+                "returnGeometry": "false",
+                "f": "json",
+            }
+        )
+        url = f"https://services.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/identify?{params}"
+        req = urllib.request.Request(url, headers={"User-Agent": "HarmoneeApp/0.1"})
+        with urllib.request.urlopen(req, timeout=4) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+            for item in payload.get("results", []):
+                attrs = item.get("attributes", {})
+                raw_ymd = attrs.get("DATE (YYYYMMDD)") or attrs.get("SRC_DATE")
+                if raw_ymd and raw_ymd != "Null" and len(str(raw_ymd)) == 8:
+                    dt = datetime.strptime(str(raw_ymd), "%Y%m%d")
+                    return dt.strftime("%b %d, %Y")
+                src_date2 = attrs.get("SRC_DATE2")
+                if src_date2 and src_date2 != "Null":
+                    return str(src_date2)
+    except Exception:
+        pass
+    return None
 
 
 def format_photon_feature(feature: dict) -> Optional[dict]:
@@ -143,10 +179,18 @@ def get_address():
             data["lon"] = lon
             write_data(data)
 
+    capture_date = data.get("captureDate")
+    if lat is not None and lon is not None and not capture_date:
+        capture_date = lookup_capture_date(lat, lon)
+        if capture_date:
+            data["captureDate"] = capture_date
+            write_data(data)
+
     return {
         "address": address,
         "lat": lat,
         "lon": lon,
+        "captureDate": capture_date,
     }
 
 
@@ -163,16 +207,25 @@ def save_address(payload: AddressPayload):
             lat = matches[0].get("lat")
             lon = matches[0].get("lon")
 
+    capture_date = lookup_capture_date(lat, lon) if (lat is not None and lon is not None) else None
+
     data["address"] = cleaned
     data["lat"] = lat
     data["lon"] = lon
+    data["captureDate"] = capture_date
     write_data(data)
     return {
         "address": data["address"],
         "lat": data["lat"],
         "lon": data["lon"],
+        "captureDate": capture_date,
         "saved": True,
     }
+
+
+@app.get("/api/imagery-date")
+def get_imagery_date(lat: float = Query(...), lon: float = Query(...)):
+    return {"captureDate": lookup_capture_date(lat, lon)}
 
 
 @app.get("/api/address/autocomplete")
