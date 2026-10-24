@@ -701,6 +701,268 @@ def get_audubon_image(species: str = Query(...)):
         return Response(status_code=404)
 
 
+# Ecoregion-indexed Keystone Native Plant dataset compiled from:
+# - Dr. Douglas Tallamy & Kimberley Shropshire (Univ. of Delaware / USFS) Lepidoptera Host-Plant Database
+# - National Wildlife Federation (NWF) Keystone Native Plants by Ecoregion
+# - USDA PLANTS & BONAP native flora distributions
+KEYSTONE_PLANT_DATASET = {
+    "5": {  # Level I: 5 Northern Forests / 5.3 Atlantic Highlands (incl. 58h Reading Prong)
+        "treesAndShrubs": [
+            {
+                "commonName": "Native Oaks",
+                "genus": "Quercus",
+                "exampleSpecies": "White Oak (Q. alba), Northern Red Oak (Q. rubra)",
+                "lepidopteraCount": 445,
+            },
+            {
+                "commonName": "Native Cherries & Plums",
+                "genus": "Prunus",
+                "exampleSpecies": "Black Cherry (P. serotina), Chokecherry (P. virginiana)",
+                "lepidopteraCount": 409,
+            },
+            {
+                "commonName": "Native Willows",
+                "genus": "Salix",
+                "exampleSpecies": "Black Willow (S. nigra), Pussy Willow (S. discolor)",
+                "lepidopteraCount": 397,
+            },
+            {
+                "commonName": "Native Birches",
+                "genus": "Betula",
+                "exampleSpecies": "Sweet Birch (B. lenta), Yellow Birch (B. alleghaniensis)",
+                "lepidopteraCount": 385,
+            },
+            {
+                "commonName": "Native Maples",
+                "genus": "Acer",
+                "exampleSpecies": "Sugar Maple (A. saccharum), Red Maple (A. rubrum)",
+                "lepidopteraCount": 276,
+            },
+            {
+                "commonName": "Native Blueberries",
+                "genus": "Vaccinium",
+                "exampleSpecies": "Highbush Blueberry (V. corymbosum), Lowbush Blueberry (V. angustifolium)",
+                "lepidopteraCount": 258,
+            },
+        ],
+        "flowersAndGrasses": [
+            {
+                "commonName": "Goldenrods",
+                "genus": "Solidago",
+                "exampleSpecies": "Wrinkleleaf Goldenrod (S. rugosa), Canada Goldenrod (S. canadensis)",
+                "lepidopteraCount": 120,
+            },
+            {
+                "commonName": "Native Asters",
+                "genus": "Symphyotrichum",
+                "exampleSpecies": "New England Aster (S. novae-angliae), Smooth Blue Aster (S. laeve)",
+                "lepidopteraCount": 107,
+            },
+            {
+                "commonName": "Woodland & Perennial Sunflowers",
+                "genus": "Helianthus",
+                "exampleSpecies": "Thinleaf Sunflower (H. decapetalus), Woodland Sunflower (H. divaricatus)",
+                "lepidopteraCount": 58,
+            },
+            {
+                "commonName": "Native Sedges",
+                "genus": "Carex",
+                "exampleSpecies": "Tussock Sedge (C. stricta), Pennsylvania Sedge (C. pensylvanica)",
+                "lepidopteraCount": 36,
+            },
+            {
+                "commonName": "Bluestem Grasses",
+                "genus": "Schizachyrium",
+                "exampleSpecies": "Little Bluestem (S. scoparium)",
+                "lepidopteraCount": 28,
+            },
+        ],
+    },
+    "8": {  # Level I: 8 Eastern Temperate Forests (incl. 64 Piedmont & 67 Ridge and Valley)
+        "treesAndShrubs": [
+            {
+                "commonName": "Native Oaks",
+                "genus": "Quercus",
+                "exampleSpecies": "White Oak (Q. alba), Pin Oak (Q. palustris), Red Oak (Q. rubra)",
+                "lepidopteraCount": 534,
+            },
+            {
+                "commonName": "Native Cherries & Plums",
+                "genus": "Prunus",
+                "exampleSpecies": "Black Cherry (P. serotina), American Plum (P. americana)",
+                "lepidopteraCount": 456,
+            },
+            {
+                "commonName": "Native Willows",
+                "genus": "Salix",
+                "exampleSpecies": "Black Willow (S. nigra), Silky Willow (S. sericea)",
+                "lepidopteraCount": 355,
+            },
+            {
+                "commonName": "Native Birches",
+                "genus": "Betula",
+                "exampleSpecies": "River Birch (B. nigra), Sweet Birch (B. lenta)",
+                "lepidopteraCount": 332,
+            },
+            {
+                "commonName": "Native Maples",
+                "genus": "Acer",
+                "exampleSpecies": "Red Maple (A. rubrum), Sugar Maple (A. saccharum)",
+                "lepidopteraCount": 285,
+            },
+            {
+                "commonName": "Native Blueberries",
+                "genus": "Vaccinium",
+                "exampleSpecies": "Highbush Blueberry (V. corymbosum), Deerberry (V. stamineum)",
+                "lepidopteraCount": 248,
+            },
+        ],
+        "flowersAndGrasses": [
+            {
+                "commonName": "Goldenrods",
+                "genus": "Solidago",
+                "exampleSpecies": "Showy Goldenrod (S. speciosa), Wrinkleleaf Goldenrod (S. rugosa)",
+                "lepidopteraCount": 125,
+            },
+            {
+                "commonName": "Native Asters",
+                "genus": "Symphyotrichum",
+                "exampleSpecies": "New England Aster (S. novae-angliae), Heart-leaved Aster (S. cordifolius)",
+                "lepidopteraCount": 112,
+            },
+            {
+                "commonName": "Perennial Sunflowers",
+                "genus": "Helianthus",
+                "exampleSpecies": "Woodland Sunflower (H. divaricatus), Thinleaf Sunflower (H. decapetalus)",
+                "lepidopteraCount": 73,
+            },
+            {
+                "commonName": "Joe-Pye Weeds & Bonesets",
+                "genus": "Eutrochium",
+                "exampleSpecies": "Hollow Joe-Pye Weed (E. fistulosum), Sweet Joe-Pye (E. purpureum)",
+                "lepidopteraCount": 42,
+            },
+            {
+                "commonName": "Native Sedges & Panicgrasses",
+                "genus": "Carex",
+                "exampleSpecies": "Tussock Sedge (C. stricta), Switchgrass (Panicum virgatum)",
+                "lepidopteraCount": 36,
+            },
+        ],
+    },
+    "9": {  # Level I: 9 Great Plains
+        "treesAndShrubs": [
+            {
+                "commonName": "Native Oaks",
+                "genus": "Quercus",
+                "exampleSpecies": "Bur Oak (Q. macrocarpa), Chinkapin Oak (Q. muehlenbergii)",
+                "lepidopteraCount": 318,
+            },
+            {
+                "commonName": "Native Willows",
+                "genus": "Salix",
+                "exampleSpecies": "Peachleaf Willow (S. amygdaloides), Sandbar Willow (S. exigua)",
+                "lepidopteraCount": 296,
+            },
+            {
+                "commonName": "Native Cherries & Plums",
+                "genus": "Prunus",
+                "exampleSpecies": "Chokecherry (P. virginiana), American Plum (P. americana)",
+                "lepidopteraCount": 284,
+            },
+        ],
+        "flowersAndGrasses": [
+            {
+                "commonName": "Perennial Sunflowers",
+                "genus": "Helianthus",
+                "exampleSpecies": "Maximilian Sunflower (H. maximiliani), Stiff Sunflower (H. pauciflorus)",
+                "lepidopteraCount": 88,
+            },
+            {
+                "commonName": "Goldenrods",
+                "genus": "Solidago",
+                "exampleSpecies": "Stiff Goldenrod (S. rigida), Missouri Goldenrod (S. missouriensis)",
+                "lepidopteraCount": 82,
+            },
+            {
+                "commonName": "Prairie Asters",
+                "genus": "Symphyotrichum",
+                "exampleSpecies": "Smooth Blue Aster (S. laeve), Heath Aster (S. ericoides)",
+                "lepidopteraCount": 74,
+            },
+        ],
+    },
+}
+
+
+def lookup_keystone_plants(lat: float, lon: float, ecoregions: Optional[dict] = None) -> dict:
+    """Rank top 3 native trees/shrubs and top 3 native flowers/grasses by Lepidoptera host count."""
+    l1_str = (ecoregions or {}).get("level1") or ""
+    l1_match = re.match(r"^\s*(\d+)", l1_str)
+    l1_code = l1_match.group(1) if l1_match else "8"
+
+    profile = KEYSTONE_PLANT_DATASET.get(l1_code) or KEYSTONE_PLANT_DATASET["8"]
+
+    # Query local botanical observations within 20 km to identify locally verified species per genus
+    local_species_by_genus: dict[str, list[str]] = {}
+    try:
+        inat_params = urllib.parse.urlencode(
+            {
+                "lat": round(lat, 4),
+                "lng": round(lon, 4),
+                "radius": 20,
+                "taxon_id": 47126,  # Plantae
+                "quality_grade": "research",
+                "native": "true",
+                "per_page": 60,
+            }
+        )
+        req = urllib.request.Request(
+            f"https://api.inaturalist.org/v1/observations/species_counts?{inat_params}",
+            headers={"User-Agent": "HarmoneeApp/1.0"},
+        )
+        with urllib.request.urlopen(req, timeout=4) as resp:
+            payload = json.loads(resp.read().decode("utf-8"))
+            for item in payload.get("results", []):
+                taxon = item.get("taxon") or {}
+                sci = taxon.get("name") or ""
+                com = taxon.get("preferred_common_name") or ""
+                parts = sci.split()
+                if len(parts) >= 2 and com:
+                    genus = parts[0]
+                    formatted = f"{com.title()} ({parts[0][0]}. {parts[1]})"
+                    bucket = local_species_by_genus.setdefault(genus, [])
+                    if formatted not in bucket and len(bucket) < 2:
+                        bucket.append(formatted)
+    except Exception:
+        pass
+
+    def build_top_list(items: list[dict], limit: int = 3) -> list[dict]:
+        enriched = []
+        for entry in items:
+            genus = entry["genus"]
+            local_examples = local_species_by_genus.get(genus)
+            enriched.append(
+                {
+                    "commonName": entry["commonName"],
+                    "genus": f"{genus} spp.",
+                    "exampleSpecies": (
+                        ", ".join(local_examples) if local_examples else entry["exampleSpecies"]
+                    ),
+                    "lepidopteraCount": entry["lepidopteraCount"],
+                    "locallyVerified": bool(local_examples),
+                }
+            )
+        enriched.sort(key=lambda x: x["lepidopteraCount"], reverse=True)
+        return enriched[:limit]
+
+    return {
+        "treesAndShrubs": build_top_list(profile["treesAndShrubs"], 3),
+        "flowersAndGrasses": build_top_list(profile["flowersAndGrasses"], 3),
+        "methodology": "Tallamy & Shropshire (UD/USFS) Lepidoptera Host-Plant Index + EPA Ecoregion Flora",
+    }
+
+
 @app.get("/api/health")
 def health_check():
     return {"status": "ok"}
@@ -757,6 +1019,16 @@ def get_address():
             data["birdOfTheDay"] = bird_of_the_day
             dirty = True
 
+    keystone_plants = data.get("keystonePlants")
+    if lat is not None and lon is not None and (
+        not isinstance(keystone_plants, dict)
+        or not keystone_plants.get("treesAndShrubs")
+    ):
+        keystone_plants = lookup_keystone_plants(lat, lon, ecoregions)
+        if keystone_plants:
+            data["keystonePlants"] = keystone_plants
+            dirty = True
+
     if dirty:
         write_data(data)
 
@@ -768,6 +1040,7 @@ def get_address():
         "parcel": parcel,
         "ecoregions": ecoregions,
         "birdOfTheDay": bird_of_the_day,
+        "keystonePlants": keystone_plants,
     }
 
 
@@ -788,6 +1061,7 @@ def save_address(payload: AddressPayload):
     parcel = lookup_parcel_boundary(lat, lon, cleaned) if (lat is not None and lon is not None) else None
     ecoregions = lookup_ecoregions(lat, lon) if (lat is not None and lon is not None) else None
     bird_of_the_day = lookup_bird_of_the_day(lat, lon) if (lat is not None and lon is not None) else None
+    keystone_plants = lookup_keystone_plants(lat, lon, ecoregions) if (lat is not None and lon is not None) else None
 
     data["address"] = cleaned
     data["lat"] = lat
@@ -796,6 +1070,7 @@ def save_address(payload: AddressPayload):
     data["parcel"] = parcel
     data["ecoregions"] = ecoregions
     data["birdOfTheDay"] = bird_of_the_day
+    data["keystonePlants"] = keystone_plants
     write_data(data)
     return {
         "address": data["address"],
@@ -805,6 +1080,7 @@ def save_address(payload: AddressPayload):
         "parcel": parcel,
         "ecoregions": ecoregions,
         "birdOfTheDay": bird_of_the_day,
+        "keystonePlants": keystone_plants,
         "saved": True,
     }
 

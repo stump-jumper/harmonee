@@ -7,6 +7,7 @@ const currentAddress = ref('')
 const captureDate = ref('')
 const ecoregions = ref(null)
 const birdOfTheDay = ref(null)
+const keystonePlants = ref(null)
 const showBirdModal = ref(false)
 const parcelFeature = ref(null)
 const mapElement = ref(null)
@@ -170,6 +171,7 @@ onMounted(async () => {
       parcelFeature.value = data.parcel || null
       ecoregions.value = data.ecoregions || null
       birdOfTheDay.value = data.birdOfTheDay || null
+      keystonePlants.value = data.keystonePlants || null
     }
   } catch {
     const local = localStorage.getItem('harmonee_address')
@@ -366,6 +368,59 @@ onBeforeUnmount(() => {
           </div>
         </div>
       </div>
+
+      <div v-if="keystonePlants" class="keystone-panel">
+        <div class="panel-heading">Keystone Native Plants</div>
+        <div class="keystone-subtitle">
+          Ranked by butterfly &amp; moth species supported
+        </div>
+
+        <div
+          v-if="keystonePlants.treesAndShrubs?.length"
+          class="keystone-group"
+        >
+          <div class="keystone-group-title">Top 3 Native Trees &amp; Shrubs</div>
+          <ul class="keystone-list">
+            <li
+              v-for="(plant, idx) in keystonePlants.treesAndShrubs"
+              :key="plant.genus"
+              class="keystone-item"
+            >
+              <div class="keystone-row-top">
+                <span class="keystone-name">
+                  {{ idx + 1 }}. {{ plant.commonName }}
+                  <span class="keystone-genus">({{ plant.genus }})</span>
+                </span>
+                <span class="keystone-count">{{ plant.lepidopteraCount }} spp.</span>
+              </div>
+              <div class="keystone-examples">{{ plant.exampleSpecies }}</div>
+            </li>
+          </ul>
+        </div>
+
+        <div
+          v-if="keystonePlants.flowersAndGrasses?.length"
+          class="keystone-group"
+        >
+          <div class="keystone-group-title">Top 3 Native Flowers &amp; Grasses</div>
+          <ul class="keystone-list">
+            <li
+              v-for="(plant, idx) in keystonePlants.flowersAndGrasses"
+              :key="plant.genus"
+              class="keystone-item"
+            >
+              <div class="keystone-row-top">
+                <span class="keystone-name">
+                  {{ idx + 1 }}. {{ plant.commonName }}
+                  <span class="keystone-genus">({{ plant.genus }})</span>
+                </span>
+                <span class="keystone-count">{{ plant.lepidopteraCount }} spp.</span>
+              </div>
+              <div class="keystone-examples">{{ plant.exampleSpecies }}</div>
+            </li>
+          </ul>
+        </div>
+      </div>
     </div>
 
     <div
@@ -484,7 +539,8 @@ onBeforeUnmount(() => {
 .info-panel,
 .layers-panel,
 .ecoregion-panel,
-.bird-panel {
+.bird-panel,
+.keystone-panel {
   padding: 0.65rem 0.85rem;
   background-color: rgba(30, 58, 47, 0.9);
   border: 1px solid var(--border-sage);
@@ -719,6 +775,83 @@ onBeforeUnmount(() => {
   gap: 0.5rem;
   font-size: 0.8rem;
   color: var(--text-muted);
+}
+
+.keystone-subtitle {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-top: -0.15rem;
+  margin-bottom: 0.55rem;
+}
+
+.keystone-group + .keystone-group {
+  margin-top: 0.65rem;
+  padding-top: 0.55rem;
+  border-top: 1px solid rgba(61, 102, 86, 0.55);
+}
+
+.keystone-group-title {
+  font-size: 0.74rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-cream);
+  margin-bottom: 0.35rem;
+}
+
+.keystone-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.42rem;
+}
+
+.keystone-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+
+.keystone-row-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.45rem;
+}
+
+.keystone-name {
+  font-size: 0.83rem;
+  font-weight: 600;
+  color: var(--text-cream);
+  line-height: 1.25;
+}
+
+.keystone-genus {
+  font-weight: 400;
+  font-style: italic;
+  color: var(--text-muted);
+  font-size: 0.77rem;
+}
+
+.keystone-count {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-cream);
+  background-color: var(--bg-forest-light);
+  border: 1px solid var(--border-sage);
+  border-radius: 3px;
+  padding: 0.05rem 0.35rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.keystone-examples {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  line-height: 1.3;
+  padding-left: 0.85rem;
 }
 
 .layers-list {
