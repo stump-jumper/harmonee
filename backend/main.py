@@ -13,6 +13,8 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+from backend.segmentation import segment_parcel_habitats, segment_parcel_from_user_paint
+
 load_dotenv(Path(__file__).parent / ".env")
 
 app = FastAPI(title="Harmonee API", version="0.1.0")
@@ -1029,6 +1031,16 @@ def get_address():
             data["keystonePlants"] = keystone_plants
             dirty = True
 
+    habitat_segmentation = data.get("habitatSegmentation")
+    if parcel and (
+        not isinstance(habitat_segmentation, dict)
+        or not habitat_segmentation.get("layers")
+    ):
+        habitat_segmentation = segment_parcel_habitats(parcel, MAPBOX_TOKEN)
+        if habitat_segmentation and habitat_segmentation.get("layers"):
+            data["habitatSegmentation"] = habitat_segmentation
+            dirty = True
+
     if dirty:
         write_data(data)
 
@@ -1041,6 +1053,8 @@ def get_address():
         "ecoregions": ecoregions,
         "birdOfTheDay": bird_of_the_day,
         "keystonePlants": keystone_plants,
+        "habitatSegmentation": habitat_segmentation,
+        "paintStrokes": data.get("paintStrokes", []),
     }
 
 
@@ -1062,6 +1076,7 @@ def save_address(payload: AddressPayload):
     ecoregions = lookup_ecoregions(lat, lon) if (lat is not None and lon is not None) else None
     bird_of_the_day = lookup_bird_of_the_day(lat, lon) if (lat is not None and lon is not None) else None
     keystone_plants = lookup_keystone_plants(lat, lon, ecoregions) if (lat is not None and lon is not None) else None
+    habitat_segmentation = segment_parcel_habitats(parcel, MAPBOX_TOKEN) if parcel else None
 
     data["address"] = cleaned
     data["lat"] = lat
@@ -1071,6 +1086,7 @@ def save_address(payload: AddressPayload):
     data["ecoregions"] = ecoregions
     data["birdOfTheDay"] = bird_of_the_day
     data["keystonePlants"] = keystone_plants
+    data["habitatSegmentation"] = habitat_segmentation
     write_data(data)
     return {
         "address": data["address"],
@@ -1081,8 +1097,44 @@ def save_address(payload: AddressPayload):
         "ecoregions": ecoregions,
         "birdOfTheDay": bird_of_the_day,
         "keystonePlants": keystone_plants,
+        "habitatSegmentation": habitat_segmentation,
+        "paintStrokes": data.get("paintStrokes", []),
         "saved": True,
     }
+
+
+class PaintSegmentationPayload(BaseModel):
+    strokes: list = []
+
+
+@app.post("/api/segment/paint")
+def run_paint_segmentation(payload: PaintSegmentationPayload):
+    data = read_data()
+    parcel = data.get("parcel")
+    if not parcel:
+        return {"layers": [], "message": "No parcel boundary loaded"}
+    strokes = payload.strokes
+    habitat_segmentation = segment_parcel_from_user_paint(parcel, strokes, MAPBOX_TOKEN)
+    data["paintStrokes"] = strokes
+    data["habitatSegmentation"] = habitat_segmentation
+    write_data(data)
+    return habitat_segmentation
+
+
+@app.post("/api/segment")
+def run_segmentation():
+    data = read_data()
+    parcel = data.get("parcel")
+    if not parcel:
+        return {"layers": []}
+    existing_strokes = data.get("paintStrokes", [])
+    if existing_strokes:
+        habitat_segmentation = segment_parcel_from_user_paint(parcel, existing_strokes, MAPBOX_TOKEN)
+    else:
+        habitat_segmentation = segment_parcel_habitats(parcel, MAPBOX_TOKEN)
+    data["habitatSegmentation"] = habitat_segmentation
+    write_data(data)
+    return habitat_segmentation
 
 
 @app.get("/api/imagery-date")

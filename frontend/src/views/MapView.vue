@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, toRaw, onMounted, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, toRaw, onMounted, onBeforeUnmount } from 'vue'
 import mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
 
@@ -8,6 +8,8 @@ const captureDate = ref('')
 const ecoregions = ref(null)
 const birdOfTheDay = ref(null)
 const keystonePlants = ref(null)
+const habitatSegmentation = ref(null)
+const isSegmenting = ref(false)
 const showBirdModal = ref(false)
 const parcelFeature = ref(null)
 const mapElement = ref(null)
@@ -99,6 +101,214 @@ const layers = ref([
   },
 ])
 
+const BRUSH_CLASSES = [
+  { id: 'tree_canopy', name: 'Tree Canopy', color: '#15803d', icon: '🌳' },
+  { id: 'low_vegetation', name: 'Low Vegetation', color: '#4ade80', icon: '🌱' },
+  { id: 'impervious_surfaces', name: 'Impervious Surfaces', color: '#94a3af', icon: '🏠' },
+  { id: 'water', name: 'Water', color: '#38bdf8', icon: '💧' },
+  { id: 'barren', name: 'Barren', color: '#d97706', icon: '🏜️' },
+]
+
+const isPaintMode = ref(false)
+const activeBrushClass = ref('tree_canopy')
+const brushSizeMeters = ref(6.0)
+const strokes = ref([])
+const isDrawing = ref(false)
+const currentStroke = ref(null)
+
+const isMouseOnMap = ref(false)
+const cursorPos = ref({ x: -1000, y: -1000 })
+const brushDiameterPx = ref(20)
+
+const activeBrushColor = computed(() => {
+  const b = BRUSH_CLASSES.find((c) => c.id === activeBrushClass.value)
+  return b ? b.color : '#52b788'
+})
+
+function updateBrushDiameter() {
+  if (!mapInstance) return
+  const center = mapInstance.getCenter()
+  const centerLat = center ? center.lat : 40.5
+  const zoom = mapInstance.getZoom() || 18.5
+  const metersPerPixel = (156543.03392 * Math.cos((centerLat * Math.PI) / 180)) / Math.pow(2, zoom)
+  const radPx = Math.max(3, Math.round(brushSizeMeters.value / metersPerPixel))
+  brushDiameterPx.value = radPx * 2
+}
+
+watch(brushSizeMeters, () => {
+  updateBrushDiameter()
+})
+
+function handleMapMouseMove(e) {
+  if (!isPaintMode.value) return
+  isMouseOnMap.value = true
+  const rect = mapElement.value?.getBoundingClientRect()
+  if (rect) {
+    cursorPos.value = {
+      x: e.clientX - rect.left,
+      y: e.clientY - rect.top,
+    }
+  }
+}
+
+function handleMapMouseLeave() {
+  isMouseOnMap.value = false
+}
+
+function updatePaintStrokesSource() {
+  if (!mapInstance || !mapInstance.getSource('user-paint-strokes')) return
+
+  // The paint strokes disappear when not in paint mode so the clean segmented boundaries are visible
+  if (!isPaintMode.value) {
+    mapInstance.getSource('user-paint-strokes').setData({
+      type: 'FeatureCollection',
+      features: [],
+    })
+    return
+  }
+
+  const center = mapInstance.getCenter()
+  const centerLat = center ? center.lat : 40.5
+  const zoom = mapInstance.getZoom() || 18.5
+  const metersPerPixel = (156543.03392 * Math.cos((centerLat * Math.PI) / 180)) / Math.pow(2, zoom)
+
+  const allStrokes = currentStroke.value
+    ? [...strokes.value, currentStroke.value]
+    : strokes.value
+  const features = []
+
+  for (const s of allStrokes) {
+    const radM = s.radiusMeters || 6.0
+    const radPx = Math.max(3, Math.round(radM / metersPerPixel))
+    const widthPx = radPx * 2
+
+    for (const pt of s.coordinates) {
+      features.push({
+        type: 'Feature',
+        geometry: { type: 'Point', coordinates: pt },
+        properties: { color: s.color, radiusPx: radPx },
+      })
+    }
+
+    if (s.coordinates.length >= 2) {
+      features.push({
+        type: 'Feature',
+        geometry: { type: 'LineString', coordinates: s.coordinates },
+        properties: { color: s.color, widthPx: widthPx },
+      })
+    }
+  }
+
+  mapInstance.getSource('user-paint-strokes').setData({
+    type: 'FeatureCollection',
+    features,
+  })
+}
+
+function onMapMouseDown(e) {
+  if (!isPaintMode.value || !mapInstance) return
+  if (e.originalEvent && e.originalEvent.button !== 0) return // only left click
+  isDrawing.value = true
+  const coords = [e.lngLat.lng, e.lngLat.lat]
+  const brush = BRUSH_CLASSES.find((c) => c.id === activeBrushClass.value) || BRUSH_CLASSES[0]
+
+  currentStroke.value = {
+    id: Date.now(),
+    categoryId: brush.id,
+    color: brush.color,
+    radiusMeters: brushSizeMeters.value,
+    coordinates: [coords],
+  }
+  updatePaintStrokesSource()
+}
+
+function onMapMouseMove(e) {
+  if (!isPaintMode.value || !isDrawing.value || !currentStroke.value) return
+  const coords = [e.lngLat.lng, e.lngLat.lat]
+  const last = currentStroke.value.coordinates[currentStroke.value.coordinates.length - 1]
+  if (
+    !last ||
+    Math.abs(coords[0] - last[0]) > 0.000003 ||
+    Math.abs(coords[1] - last[1]) > 0.000003
+  ) {
+    currentStroke.value.coordinates.push(coords)
+    updatePaintStrokesSource()
+  }
+}
+
+function onMapMouseUp() {
+  if (!isPaintMode.value || !isDrawing.value) return
+  isDrawing.value = false
+  if (currentStroke.value && currentStroke.value.coordinates.length > 0) {
+    strokes.value.push(currentStroke.value)
+    currentStroke.value = null
+    updatePaintStrokesSource()
+  }
+}
+
+function togglePaintMode() {
+  isPaintMode.value = !isPaintMode.value
+  if (!mapInstance) return
+
+  if (isPaintMode.value) {
+    mapInstance.dragPan.disable()
+    const canvas = mapInstance.getCanvas()
+    if (canvas) canvas.style.cursor = 'none'
+    updateBrushDiameter()
+  } else {
+    mapInstance.dragPan.enable()
+    const canvas = mapInstance.getCanvas()
+    if (canvas) canvas.style.cursor = ''
+    isDrawing.value = false
+    currentStroke.value = null
+    isMouseOnMap.value = false
+  }
+  updatePaintStrokesSource()
+}
+
+function undoStroke() {
+  strokes.value.pop()
+  updatePaintStrokesSource()
+}
+
+function clearAllStrokes() {
+  strokes.value = []
+  currentStroke.value = null
+  updatePaintStrokesSource()
+}
+
+async function triggerPaintSegmentation() {
+  if (isSegmenting.value) return
+  if (!strokes.value.length) {
+    alert('Please paint at least one stroke on your parcel first to indicate a habitat class.')
+    return
+  }
+  isSegmenting.value = true
+  try {
+    const res = await fetch('/api/segment/paint', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ strokes: strokes.value }),
+    })
+    if (res.ok) {
+      const segData = await res.json()
+      habitatSegmentation.value = segData
+      registerHabitatLayers(segData)
+
+      // Exit paint mode and ensure strokes disappear so only the clean segmentation is visible
+      if (isPaintMode.value) {
+        togglePaintMode()
+      } else {
+        updatePaintStrokesSource()
+      }
+    }
+  } catch (err) {
+    console.error('Segmentation error:', err)
+  } finally {
+    isSegmenting.value = false
+  }
+}
+
 function toggleLayer(layer) {
   if (!layer.toggleable) return
   layer.visible = !layer.visible
@@ -108,6 +318,91 @@ function toggleLayer(layer) {
   for (const mapLayerId of layer.mapLayerIds) {
     if (mapInstance.getLayer(mapLayerId)) {
       mapInstance.setLayoutProperty(mapLayerId, 'visibility', visibility)
+    }
+  }
+}
+
+function registerHabitatLayers(segData) {
+  const segLayers = segData?.layers || []
+  // Keep base and property-boundary layers, replace habitat layers
+  const coreLayers = layers.value.filter((l) => l.type !== 'habitat')
+  const dynamicLayers = segLayers.map((seg) => ({
+    id: seg.id,
+    name: seg.name,
+    type: 'habitat',
+    visible: true,
+    toggleable: true,
+    color: seg.color,
+    percentage: seg.percentage,
+    feature: seg.feature,
+    mapLayerIds: [`${seg.id}-fill`, `${seg.id}-outline`],
+  }))
+  layers.value = [...coreLayers, ...dynamicLayers]
+
+  if (!mapInstance || !mapInstance.isStyleLoaded()) return
+
+  // Clean up any stale habitat layers or sources from previous segmentations
+  const activeHabitatIds = new Set(dynamicLayers.map((l) => l.id))
+  const currentLayers = mapInstance.getStyle()?.layers || []
+  for (const mLayer of currentLayers) {
+    if (mLayer.id.startsWith('habitat-')) {
+      const baseId = mLayer.id.replace(/-fill$|-outline$/, '')
+      if (!activeHabitatIds.has(baseId)) {
+        if (mapInstance.getLayer(mLayer.id)) mapInstance.removeLayer(mLayer.id)
+        const srcId = `${baseId}-source`
+        if (mapInstance.getSource(srcId)) mapInstance.removeSource(srcId)
+      }
+    }
+  }
+
+  const beforeId = mapInstance.getLayer('parcel-boundary-outline')
+    ? 'parcel-boundary-outline'
+    : undefined
+
+  for (const hLayer of dynamicLayers) {
+    const srcId = `${hLayer.id}-source`
+    const fillId = `${hLayer.id}-fill`
+    const outlineId = `${hLayer.id}-outline`
+    const rawFeature = JSON.parse(JSON.stringify(toRaw(hLayer.feature)))
+
+    if (mapInstance.getSource(srcId)) {
+      mapInstance.getSource(srcId).setData(rawFeature)
+    } else {
+      mapInstance.addSource(srcId, {
+        type: 'geojson',
+        data: rawFeature,
+      })
+      mapInstance.addLayer(
+        {
+          id: fillId,
+          type: 'fill',
+          source: srcId,
+          layout: { visibility: hLayer.visible ? 'visible' : 'none' },
+          paint: {
+            'fill-color': hLayer.color,
+            'fill-opacity': 0.52,
+          },
+        },
+        beforeId
+      )
+      mapInstance.addLayer(
+        {
+          id: outlineId,
+          type: 'line',
+          source: srcId,
+          layout: {
+            visibility: hLayer.visible ? 'visible' : 'none',
+            'line-join': 'round',
+            'line-cap': 'round',
+          },
+          paint: {
+            'line-color': hLayer.color,
+            'line-width': 1.5,
+            'line-opacity': 0.9,
+          },
+        },
+        beforeId
+      )
     }
   }
 }
@@ -172,6 +467,13 @@ onMounted(async () => {
       ecoregions.value = data.ecoregions || null
       birdOfTheDay.value = data.birdOfTheDay || null
       keystonePlants.value = data.keystonePlants || null
+      habitatSegmentation.value = data.habitatSegmentation || null
+      if (Array.isArray(data.paintStrokes) && data.paintStrokes.length > 0) {
+        strokes.value = data.paintStrokes
+      }
+      if (data.habitatSegmentation) {
+        registerHabitatLayers(data.habitatSegmentation)
+      }
     }
   } catch {
     const local = localStorage.getItem('harmonee_address')
@@ -207,6 +509,10 @@ onMounted(async () => {
       ],
       tileSize: 512,
       maxzoom: 22,
+    },
+    'user-paint-strokes': {
+      type: 'geojson',
+      data: { type: 'FeatureCollection', features: [] },
     },
   }
 
@@ -255,6 +561,34 @@ onMounted(async () => {
     )
   }
 
+  // Add paint stroke layers so user strokes are rendered on top of the satellite imagery
+  styleLayers.push(
+    {
+      id: 'user-paint-strokes-lines',
+      type: 'line',
+      source: 'user-paint-strokes',
+      layout: {
+        'line-cap': 'round',
+        'line-join': 'round',
+      },
+      paint: {
+        'line-color': ['get', 'color'],
+        'line-width': ['get', 'widthPx'],
+        'line-opacity': 0.88,
+      },
+    },
+    {
+      id: 'user-paint-strokes-points',
+      type: 'circle',
+      source: 'user-paint-strokes',
+      paint: {
+        'circle-color': ['get', 'color'],
+        'circle-radius': ['get', 'radiusPx'],
+        'circle-opacity': 0.88,
+      },
+    }
+  )
+
   mapboxgl.accessToken = token
   mapInstance = new mapboxgl.Map({
     container: mapElement.value,
@@ -269,8 +603,8 @@ onMounted(async () => {
     attributionControl: false,
   })
 
-  mapInstance.addControl(new mapboxgl.NavigationControl(), 'top-right')
-  mapInstance.addControl(new mapboxgl.FullscreenControl(), 'top-right')
+  mapInstance.addControl(new mapboxgl.NavigationControl(), 'bottom-right')
+  mapInstance.addControl(new mapboxgl.FullscreenControl(), 'bottom-right')
   mapInstance.addControl(
     new mapboxgl.ScaleControl({ maxWidth: 120, unit: 'imperial' }),
     'bottom-left'
@@ -278,6 +612,9 @@ onMounted(async () => {
 
   mapInstance.once('load', () => {
     mapInstance.resize()
+    if (habitatSegmentation.value) {
+      registerHabitatLayers(habitatSegmentation.value)
+    }
     if (rawParcel) {
       const bounds = getParcelBounds(rawParcel)
       if (bounds) {
@@ -287,7 +624,22 @@ onMounted(async () => {
           duration: 0,
         })
       }
+      if (strokes.value.length > 0) {
+        updatePaintStrokesSource()
+      }
     }
+  })
+
+  mapInstance.on('mousedown', onMapMouseDown)
+  mapInstance.on('mousemove', onMapMouseMove)
+  mapInstance.on('mouseup', onMapMouseUp)
+  mapInstance.on('zoom', () => {
+    updateBrushDiameter()
+    updatePaintStrokesSource()
+  })
+  mapInstance.on('move', () => {
+    updateBrushDiameter()
+    updatePaintStrokesSource()
   })
 
   mapInstance.on('moveend', () => {
@@ -306,7 +658,11 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <section class="map-page">
+  <section
+    class="map-page"
+    @mousemove="handleMapMouseMove"
+    @mouseleave="handleMapMouseLeave"
+  >
     <div class="map-sidebar-left">
       <div v-if="currentAddress" class="info-panel">
         <div class="panel-heading">Property Info</div>
@@ -478,13 +834,134 @@ onBeforeUnmount(() => {
               <span v-else class="base-indicator" title="Base layer (always active)"></span>
               <span
                 class="layer-swatch"
-                :style="{ borderColor: layer.color, backgroundColor: layer.type === 'base' ? layer.color : 'transparent' }"
+                :style="{
+                  borderColor: layer.color,
+                  backgroundColor: layer.type !== 'overlay' ? layer.color : 'transparent',
+                }"
               ></span>
               <span class="layer-name">{{ layer.name }}</span>
               <span v-if="!layer.toggleable" class="layer-tag">Base</span>
+              <span v-else-if="layer.percentage != null" class="layer-tag">
+                {{ layer.percentage }}%
+              </span>
             </label>
           </li>
         </ul>
+
+        <!-- User-driven Interactive Paint Segmentation Section -->
+        <div v-if="parcelFeature" class="paint-controls-section">
+          <div class="section-divider"></div>
+          <button
+            type="button"
+            :class="['paint-toggle-btn', { active: isPaintMode }]"
+            @click="togglePaintMode"
+          >
+            <span class="btn-icon">{{ isPaintMode ? '✕' : '🎨' }}</span>
+            <span>{{ isPaintMode ? 'Exit Paint Mode' : 'Paint Habitat Seeds' }}</span>
+          </button>
+
+          <div v-if="strokes.length > 0" class="strokes-status-bar">
+            <span class="strokes-badge">{{ strokes.length }} stroke{{ strokes.length === 1 ? '' : 's' }}</span>
+            <div class="tool-btn-group">
+              <button type="button" class="tool-btn-sm" title="Undo last stroke" @click="undoStroke">↩</button>
+              <button type="button" class="tool-btn-sm" title="Clear all strokes" @click="clearAllStrokes">🗑</button>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            class="segment-btn"
+            :disabled="isSegmenting || !strokes.length"
+            @click="triggerPaintSegmentation"
+          >
+            <span v-if="isSegmenting">Segmenting from Paint...</span>
+            <span v-else-if="strokes.length">🚀 Segment from Paint</span>
+            <span v-else>Paint seeds to segment</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Floating Paint Toolbar -->
+    <div v-if="isPaintMode" class="paint-floating-toolbar">
+      <div class="toolbar-header">
+        <div class="toolbar-title-wrap">
+          <span class="toolbar-icon">🎨</span>
+          <span class="toolbar-title">Paint Habitat Seeds</span>
+        </div>
+        <span class="toolbar-hint">Drag on the map to paint target habitat areas</span>
+        <button type="button" class="toolbar-close-btn" title="Exit Paint Mode" @click="togglePaintMode">✕</button>
+      </div>
+
+      <div class="toolbar-palette">
+        <button
+          v-for="b in BRUSH_CLASSES"
+          :key="b.id"
+          type="button"
+          :class="['palette-chip', { active: activeBrushClass === b.id }]"
+          :style="{ '--chip-color': b.color }"
+          @click="activeBrushClass = b.id"
+        >
+          <span class="chip-swatch" :style="{ backgroundColor: b.color }"></span>
+          <span class="chip-icon">{{ b.icon }}</span>
+          <span class="chip-name">{{ b.name }}</span>
+        </button>
+      </div>
+
+      <div class="toolbar-footer">
+        <div class="brush-size-group">
+          <span class="size-label">Brush:</span>
+          <button
+            type="button"
+            :class="['size-btn', { active: brushSizeMeters === 3.0 }]"
+            @click="brushSizeMeters = 3.0"
+          >
+            S (3m)
+          </button>
+          <button
+            type="button"
+            :class="['size-btn', { active: brushSizeMeters === 6.0 }]"
+            @click="brushSizeMeters = 6.0"
+          >
+            M (6m)
+          </button>
+          <button
+            type="button"
+            :class="['size-btn', { active: brushSizeMeters === 12.0 }]"
+            @click="brushSizeMeters = 12.0"
+          >
+            L (12m)
+          </button>
+        </div>
+
+        <div class="toolbar-actions">
+          <button
+            type="button"
+            class="action-btn"
+            :disabled="!strokes.length"
+            title="Undo last stroke"
+            @click="undoStroke"
+          >
+            ↩ Undo
+          </button>
+          <button
+            type="button"
+            class="action-btn"
+            :disabled="!strokes.length"
+            title="Clear all strokes"
+            @click="clearAllStrokes"
+          >
+            🗑 Clear
+          </button>
+          <button
+            type="button"
+            class="action-btn-primary"
+            :disabled="isSegmenting || !strokes.length"
+            @click="triggerPaintSegmentation"
+          >
+            {{ isSegmenting ? 'Segmenting...' : '🚀 Segment Habitats' }}
+          </button>
+        </div>
       </div>
     </div>
 
@@ -493,6 +970,22 @@ onBeforeUnmount(() => {
     </div>
 
     <div v-show="!errorMessage" ref="mapElement" class="satellite-map"></div>
+
+    <!-- Real-time Brush Reticle Cursor (scaled accurately to map ground meters & zoom) -->
+    <div
+      v-if="isPaintMode && isMouseOnMap"
+      class="brush-reticle-cursor"
+      :style="{
+        left: `${cursorPos.x}px`,
+        top: `${cursorPos.y}px`,
+        width: `${brushDiameterPx}px`,
+        height: `${brushDiameterPx}px`,
+        borderColor: activeBrushColor,
+      }"
+    >
+      <span class="reticle-center-dot" :style="{ backgroundColor: activeBrushColor }"></span>
+      <span class="reticle-size-pill">{{ brushSizeMeters }}m</span>
+    </div>
 
     <div v-if="captureDate && !errorMessage" class="capture-date">
       Imagery captured: {{ captureDate }}
@@ -531,8 +1024,8 @@ onBeforeUnmount(() => {
   gap: 0.6rem;
 }
 
-:deep(.mapboxgl-ctrl-top-right) {
-  top: 108px;
+:deep(.mapboxgl-ctrl-bottom-right) {
+  bottom: 38px;
   right: 4px;
 }
 
@@ -549,7 +1042,7 @@ onBeforeUnmount(() => {
 }
 
 .layers-panel {
-  width: 240px;
+  width: 280px;
 }
 
 .panel-heading {
@@ -913,6 +1406,293 @@ onBeforeUnmount(() => {
   border-radius: 3px;
 }
 
+.segment-btn {
+  margin-top: 0.55rem;
+  width: 100%;
+  padding: 0.4rem 0.6rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-cream);
+  background-color: var(--bg-forest-light);
+  border: 1px solid var(--border-sage);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.segment-btn:hover:not(:disabled) {
+  border-color: var(--text-cream);
+}
+
+.segment-btn:disabled {
+  opacity: 0.65;
+  cursor: not-allowed;
+}
+
+.section-divider {
+  height: 1px;
+  background-color: var(--border-sage);
+  margin: 0.6rem 0 0.5rem 0;
+  opacity: 0.6;
+}
+
+.paint-toggle-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.4rem;
+  padding: 0.45rem 0.6rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-cream);
+  background-color: var(--bg-forest-light);
+  border: 1px solid var(--border-sage);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.paint-toggle-btn:hover {
+  border-color: var(--color-leaf-bright);
+}
+
+.paint-toggle-btn.active {
+  background-color: #2d6a4f;
+  border-color: #52b788;
+  color: #fff;
+  box-shadow: 0 0 10px rgba(82, 183, 136, 0.4);
+}
+
+.strokes-status-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 0.4rem;
+  padding: 0.2rem 0.3rem;
+  font-size: 0.74rem;
+  background-color: rgba(0, 0, 0, 0.2);
+  border-radius: 3px;
+}
+
+.strokes-badge {
+  color: #a7f3d0;
+  font-weight: 600;
+}
+
+.tool-btn-group {
+  display: flex;
+  gap: 0.3rem;
+}
+
+.tool-btn-sm {
+  background: none;
+  border: 1px solid var(--border-sage);
+  color: var(--text-cream);
+  border-radius: 3px;
+  font-size: 0.72rem;
+  padding: 0.1rem 0.35rem;
+  cursor: pointer;
+}
+
+.tool-btn-sm:hover {
+  background-color: rgba(255, 255, 255, 0.1);
+  border-color: var(--text-cream);
+}
+
+/* Floating Paint Toolbar */
+.paint-floating-toolbar {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background-color: rgba(20, 36, 29, 0.94);
+  backdrop-filter: blur(12px);
+  border: 1px solid #52b788;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 0 16px rgba(82, 183, 136, 0.25);
+  max-width: 620px;
+  width: calc(100% - 28px);
+}
+
+.toolbar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.toolbar-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.toolbar-title {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #e8f5e9;
+}
+
+.toolbar-hint {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  flex: 1;
+  text-align: center;
+}
+
+.toolbar-close-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  cursor: pointer;
+  padding: 0.1rem 0.3rem;
+  border-radius: 3px;
+}
+
+.toolbar-close-btn:hover {
+  color: #fff;
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.toolbar-palette {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.palette-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.55rem;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text-cream);
+  background-color: rgba(0, 0, 0, 0.35);
+  border: 1.5px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.palette-chip:hover {
+  border-color: var(--chip-color);
+  background-color: rgba(0, 0, 0, 0.5);
+}
+
+.palette-chip.active {
+  border-color: var(--chip-color);
+  background-color: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 0 10px var(--chip-color);
+  color: #fff;
+}
+
+.chip-swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.chip-icon {
+  font-size: 0.85rem;
+}
+
+.toolbar-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding-top: 0.3rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.brush-size-group {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+
+.size-label {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-right: 0.15rem;
+}
+
+.size-btn {
+  padding: 0.15rem 0.45rem;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-cream);
+  background-color: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--border-sage);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.size-btn.active {
+  background-color: #2d6a4f;
+  border-color: #52b788;
+  color: #fff;
+}
+
+.toolbar-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.action-btn {
+  padding: 0.25rem 0.55rem;
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--text-cream);
+  background-color: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--border-sage);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.action-btn:hover:not(:disabled) {
+  border-color: var(--text-cream);
+}
+
+.action-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.action-btn-primary {
+  padding: 0.3rem 0.8rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #fff;
+  background-color: #2d6a4f;
+  border: 1px solid #52b788;
+  border-radius: 4px;
+  cursor: pointer;
+  box-shadow: 0 0 10px rgba(82, 183, 136, 0.3);
+  transition: all 0.15s ease;
+}
+
+.action-btn-primary:hover:not(:disabled) {
+  background-color: #1b4332;
+  border-color: #74c69d;
+  box-shadow: 0 0 14px rgba(116, 198, 157, 0.5);
+}
+
+.action-btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
 .satellite-map {
   position: absolute;
   inset: 0;
@@ -941,5 +1721,47 @@ onBeforeUnmount(() => {
   justify-content: center;
   color: var(--text-muted);
   padding: 2rem;
+}
+
+/* Brush Reticle Cursor */
+.brush-reticle-cursor {
+  position: absolute;
+  pointer-events: none;
+  border-radius: 50%;
+  border: 2px solid;
+  transform: translate(-50%, -50%);
+  z-index: 50;
+  background-color: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.7), 0 0 14px rgba(0, 0, 0, 0.4);
+  will-change: left, top, width, height;
+}
+
+.reticle-center-dot {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 2px rgba(0, 0, 0, 0.9);
+}
+
+.reticle-size-pill {
+  position: absolute;
+  top: -19px;
+  left: 50%;
+  transform: translateX(-50%);
+  background-color: rgba(18, 32, 25, 0.9);
+  color: #e8f5e9;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 8px;
+  padding: 0 6px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 15px;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
 }
 </style>
