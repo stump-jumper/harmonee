@@ -1,5 +1,7 @@
 """Application configuration, environment settings, and GIS service constants."""
 
+import base64
+import json
 import os
 from pathlib import Path
 from dotenv import load_dotenv
@@ -18,6 +20,9 @@ CORS_ORIGINS = [
 
 MAPBOX_TOKEN = os.getenv("MAPBOX_TOKEN", "")
 EBIRD_API_KEY = os.getenv("EBIRD_API_KEY", "")
+INATURALIST_USERNAME = os.getenv("INATURALIST_USERNAME", "")
+INATURALIST_API_TOKEN = os.getenv("INATURALIST_API_TOKEN", "")
+INATURALIST_API_BASE = "https://api.inaturalist.org/v1"
 
 
 def get_mapbox_token() -> str:
@@ -28,6 +33,37 @@ def get_mapbox_token() -> str:
 def get_ebird_api_key() -> str:
     """Return active eBird API key from environment or loaded config."""
     return os.getenv("EBIRD_API_KEY") or EBIRD_API_KEY
+
+
+def get_inaturalist_api_token() -> str:
+    """Return active iNaturalist JWT API token from environment or loaded config."""
+    return os.getenv("INATURALIST_API_TOKEN") or INATURALIST_API_TOKEN
+
+
+def get_inaturalist_username() -> str:
+    """Return active iNaturalist username from environment, loaded config, or JWT."""
+    username = os.getenv("INATURALIST_USERNAME") or INATURALIST_USERNAME
+    if username:
+        return username
+    # If username is empty but token is present, we can decode user_id
+    return ""
+
+
+def get_inaturalist_user_id() -> str | int | None:
+    """Extract numeric user_id from configured iNaturalist JWT token if available."""
+    token = get_inaturalist_api_token()
+    if not token or "." not in token:
+        return None
+    try:
+        parts = token.split(".")
+        if len(parts) >= 2:
+            payload_part = parts[1]
+            payload_part += "=" * (-len(payload_part) % 4)
+            payload = json.loads(base64.urlsafe_b64decode(payload_part).decode("utf-8"))
+            return payload.get("user_id")
+    except Exception:
+        return None
+    return None
 
 
 PARCEL_ENDPOINTS = [

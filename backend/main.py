@@ -4,7 +4,13 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from backend.config import CORS_ORIGINS
-from backend.routers import birds, habitat, health, property as property_router
+from backend.routers import (
+    birds,
+    habitat,
+    health,
+    inaturalist,
+    property as property_router,
+)
 
 
 def create_app() -> FastAPI:
@@ -23,6 +29,7 @@ def create_app() -> FastAPI:
     application.include_router(property_router.router)
     application.include_router(habitat.router)
     application.include_router(birds.router)
+    application.include_router(inaturalist.router)
 
     return application
 

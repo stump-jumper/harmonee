@@ -10,6 +10,7 @@ defineProps({
   habitatObjects: { type: Array, default: () => [] },
   isObjectPlacementMode: { type: Boolean, default: false },
   ebirdTotalSightings: { type: Number, default: 0 },
+  inaturalistTotalObservations: { type: Number, default: 0 },
 })
 
 const emit = defineEmits([
@@ -52,6 +53,9 @@ const emit = defineEmits([
           <span v-if="!layer.toggleable" class="layer-tag">Base</span>
           <span v-else-if="layer.id === 'habitat-objects-layer'" class="layer-tag count-tag">
             {{ habitatObjects.length }}
+          </span>
+          <span v-else-if="layer.id === 'inaturalist-observations-layer'" class="layer-tag count-tag">
+            {{ inaturalistTotalObservations }}
           </span>
           <span v-else-if="layer.id === 'ebird-sightings-layer'" class="layer-tag count-tag">
             {{ ebirdTotalSightings }}

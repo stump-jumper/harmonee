@@ -23,6 +23,15 @@ export function createInitialMapLayers() {
       mapLayerIds: ['parcel-boundary-fill', 'parcel-boundary-outline'],
     },
     {
+      id: 'inaturalist-observations-layer',
+      name: 'iNaturalist Observations',
+      type: 'overlay',
+      visible: false,
+      toggleable: true,
+      color: '#22c55e',
+      mapLayerIds: ['inaturalist-radius-fill', 'inaturalist-radius-outline'],
+    },
+    {
       id: 'habitat-objects-layer',
       name: 'Habitat Objects',
       type: 'overlay',
@@ -195,3 +204,35 @@ export const BRUSH_SIZES_METERS = [
   { label: 'M (6m)', value: 6.0 },
   { label: 'L (12m)', value: 12.0 },
 ]
+
+export const INATURALIST_TAXA = [
+  { id: 'all', label: 'All', icon: '🌿' },
+  { id: 'Plantae', label: 'Plants', icon: '🌱' },
+  { id: 'Insecta', label: 'Insects', icon: '🦋' },
+  { id: 'Aves', label: 'Birds', icon: '🪶' },
+  { id: 'Fungi', label: 'Fungi', icon: '🍄' },
+  { id: 'Other', label: 'Other', icon: '🐾' },
+]
+
+export function getIconicTaxonIcon(iconicTaxonName) {
+  switch (iconicTaxonName) {
+    case 'Plantae':
+      return '🌱'
+    case 'Insecta':
+      return '🦋'
+    case 'Aves':
+      return '🪶'
+    case 'Fungi':
+      return '🍄'
+    case 'Mammalia':
+      return '🐿️'
+    case 'Reptilia':
+      return '🦎'
+    case 'Amphibia':
+      return '🐸'
+    case 'Arachnida':
+      return '🕷️'
+    default:
+      return '🍃'
+  }
+}

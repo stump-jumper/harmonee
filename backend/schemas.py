@@ -24,3 +24,7 @@ class FeederLikelihoodPayload(BaseModel):
     month: Optional[int] = None
     lat: Optional[float] = None
     lon: Optional[float] = None
+
+
+class InaturalistUsernamePayload(BaseModel):
+    username: str

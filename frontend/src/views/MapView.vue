@@ -9,6 +9,7 @@ import BirdOfTheDayModal from '../components/map/BirdOfTheDayModal.vue'
 import EbirdSightingsPanel from '../components/map/EbirdSightingsPanel.vue'
 import EcoregionCard from '../components/map/EcoregionCard.vue'
 import HabitatObjectModal from '../components/map/HabitatObjectModal.vue'
+import InaturalistObservationsPanel from '../components/map/InaturalistObservationsPanel.vue'
 import KeystonePlantsCard from '../components/map/KeystonePlantsCard.vue'
 import MapCursorOverlay from '../components/map/MapCursorOverlay.vue'
 import MapLayersPanel from '../components/map/MapLayersPanel.vue'
@@ -16,6 +17,7 @@ import ObjectPlacementToolbar from '../components/map/ObjectPlacementToolbar.vue
 import PaintToolbar from '../components/map/PaintToolbar.vue'
 import PropertyInfoCard from '../components/map/PropertyInfoCard.vue'
 import { useEbirdSightings } from '../composables/useEbirdSightings.js'
+import { useInaturalistObservations } from '../composables/useInaturalistObservations.js'
 import { useHabitatObjects } from '../composables/useHabitatObjects.js'
 import { useHabitatPaint } from '../composables/useHabitatPaint.js'
 import { useMapLayers } from '../composables/useMapLayers.js'
@@ -49,6 +51,8 @@ const { layers, isLayerVisible, setLayerVisibility, toggleLayer, registerHabitat
         updateHabitatObjectMarkersVisibility()
       } else if (layer.id === 'ebird-sightings-layer') {
         syncWithLayerToggle(layer.visible)
+      } else if (layer.id === 'inaturalist-observations-layer') {
+        syncInaturalistWithLayerToggle(layer.visible)
       }
     },
   })
@@ -141,6 +145,30 @@ const {
   setLayerVisibility,
 })
 
+// iNaturalist observations composable
+const {
+  inaturalistData,
+  inaturalistLoading,
+  activeCategory: inatActiveCategory,
+  propertyOnly: inatPropertyOnly,
+  scope: inatScope,
+  selectedObservationId: inatSelectedObsId,
+  isPanelExpanded: isInatPanelExpanded,
+  filteredObservations: inatFilteredObservations,
+  syncWithLayerToggle: syncInaturalistWithLayerToggle,
+  togglePanel: toggleInaturalistPanel,
+  renderObservationsOnMap: renderInaturalistOnMap,
+  loadInaturalistObservations,
+  focusOnObservation: focusOnInatObservation,
+  setPropertyScope: setInatPropertyScope,
+  setScope: setInatScope,
+  updateUsername: updateInatUsername,
+  cleanupInaturalistMarkers,
+} = useInaturalistObservations(mapRef, {
+  isLayerVisible,
+  setLayerVisibility,
+})
+
 function handleMapMouseMove(e) {
   if (!isPaintMode.value && !isObjectPlacementMode.value) return
   isMouseOnMap.value = true
@@ -209,6 +237,7 @@ onMounted(async () => {
     }
     if (lat != null && lon != null) {
       loadEbirdSightings(lat, lon)
+      loadInaturalistObservations(lat, lon)
     }
   } catch {
     const local = localStorage.getItem('harmonee_address')
@@ -351,6 +380,11 @@ onMounted(async () => {
     } else if (lat != null && lon != null) {
       loadEbirdSightings(lat, lon)
     }
+    if (inaturalistData.value) {
+      renderInaturalistOnMap(inaturalistData.value, lat, lon)
+    } else if (lat != null && lon != null) {
+      loadInaturalistObservations(lat, lon)
+    }
     if (rawParcel) {
       const bounds = getParcelCoordinatesBounds(rawParcel)
       if (bounds) {
@@ -390,6 +424,7 @@ onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleKeydown)
   cleanupObjectMarkers()
   cleanupEbirdMarkers()
+  cleanupInaturalistMarkers()
   if (mapRef.value) {
     mapRef.value.remove()
     mapRef.value = null
@@ -405,6 +440,22 @@ onBeforeUnmount(() => {
   >
     <div class="map-sidebar-left">
       <PropertyInfoCard :address="currentAddress" :acreage="parcelAcreage" />
+
+      <InaturalistObservationsPanel
+        v-if="currentAddress"
+        :loading="inaturalistLoading"
+        :observations-data="inaturalistData"
+        :expanded="isInatPanelExpanded"
+        :active-category="inatActiveCategory"
+        :scope="inatScope"
+        :filtered-list="inatFilteredObservations"
+        :selected-observation-id="inatSelectedObsId"
+        @toggle-expand="toggleInaturalistPanel"
+        @update:active-category="inatActiveCategory = $event"
+        @update:scope="setInatScope"
+        @select-observation="focusOnInatObservation"
+        @update-username="updateInatUsername"
+      />
 
       <EbirdSightingsPanel
         v-if="currentAddress"
@@ -440,6 +491,7 @@ onBeforeUnmount(() => {
         :habitat-objects="habitatObjects"
         :is-object-placement-mode="isObjectPlacementMode"
         :ebird-total-sightings="ebirdSightingsData?.totalSightings || 0"
+        :inaturalist-total-observations="inaturalistData?.totalObservations || 0"
         @toggle-layer="toggleLayer"
         @toggle-paint-mode="togglePaintMode"
         @undo-stroke="undoStroke"
