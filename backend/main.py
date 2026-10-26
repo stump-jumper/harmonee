@@ -1348,7 +1348,11 @@ _ebird_cache = {}
 
 def get_ebird_sightings_data(lat: float, lon: float, radius_miles: float = 0.5, days: int = 30) -> dict:
     cache_key = f"{lat:.4f}_{lon:.4f}_{radius_miles:.2f}_{days}"
-    now_ts = datetime.now().timestamp()
+    now = datetime.now()
+    now_ts = now.timestamp()
+    cutoff_dt = now - timedelta(days=days)
+    cutoff_str = cutoff_dt.strftime("%Y-%m-%d %H:%M")
+
     if cache_key in _ebird_cache:
         cached_entry = _ebird_cache[cache_key]
         if now_ts - cached_entry["cached_at"] < 600:
@@ -1356,43 +1360,48 @@ def get_ebird_sightings_data(lat: float, lon: float, radius_miles: float = 0.5, 
 
     filtered_observations = []
     source_name = "eBird Observation Dataset"
+    active_key = os.getenv("EBIRD_API_KEY") or EBIRD_API_KEY
 
     # 1. Query live eBird API v2 if EBIRD_API_KEY is configured
-    if EBIRD_API_KEY:
+    if active_key:
         try:
-            dist_km = max(1, min(50, math.ceil(radius_miles * 1.609344) + 1))
+            # Search a slightly broader neighborhood radius (up to 3.5 km / ~2.2 mi)
+            # so we capture both local street checklists and the nearest neighborhood hotspots
+            dist_km = max(3, min(50, math.ceil(max(radius_miles, 1.5) * 1.609344) + 1))
             params = urllib.parse.urlencode({
                 "lat": round(lat, 4),
                 "lng": round(lon, 4),
                 "dist": dist_km,
                 "back": min(30, max(1, days)),
-                "maxResults": 200,
+                "maxResults": 250,
             })
             req = urllib.request.Request(
                 f"https://api.ebird.org/v2/data/obs/geo/recent?{params}",
                 headers={
-                    "X-eBirdApiToken": EBIRD_API_KEY,
+                    "X-eBirdApiToken": active_key,
                     "User-Agent": "HarmoneeApp/1.0",
                 },
             )
-            with urllib.request.urlopen(req, timeout=6) as resp:
+            with urllib.request.urlopen(req, timeout=8) as resp:
                 raw_list = json.loads(resp.read().decode("utf-8"))
+                all_live_obs = []
                 for obs in raw_list:
                     obs_lat = float(obs.get("lat") or 0)
                     obs_lng = float(obs.get("lng") or 0)
+                    obs_dt = obs.get("obsDt", "")
                     d_mi = calculate_distance_miles(lat, lon, obs_lat, obs_lng)
-                    if d_mi <= radius_miles:
+                    if obs_dt >= cutoff_str:
                         sci = obs.get("sciName", "")
                         com = obs.get("comName", "")
                         plate = match_audubon_species(sci, com)
-                        filtered_observations.append({
+                        all_live_obs.append({
                             "id": f"{obs.get('subId', 'S')}-{obs.get('speciesCode', 'sp')}",
                             "speciesCode": obs.get("speciesCode", ""),
                             "comName": com,
                             "sciName": sci,
                             "locId": obs.get("locId", ""),
                             "locName": obs.get("locName", "Nearby eBird Hotspot"),
-                            "obsDt": obs.get("obsDt", ""),
+                            "obsDt": obs_dt,
                             "howMany": obs.get("howMany") or 1,
                             "lat": obs_lat,
                             "lng": obs_lng,
@@ -1402,10 +1411,20 @@ def get_ebird_sightings_data(lat: float, lon: float, radius_miles: float = 0.5, 
                             "audubonPlate": plate.get("plate") if plate else None,
                             "source": "eBird API (Live)",
                         })
-                if filtered_observations:
+
+                if all_live_obs:
+                    # Check how many are strictly within radius_miles (e.g. 0.5 mi)
+                    strictly_within = [o for o in all_live_obs if o["distanceMiles"] <= radius_miles]
+                    if len(strictly_within) >= 5:
+                        filtered_observations = strictly_within
+                    else:
+                        # If sparse within 0.5 mi, include nearest neighborhood sightings
+                        # so that Top 5 Recent, Closest, and Common are fully populated with real birds
+                        sorted_by_dist = sorted(all_live_obs, key=lambda x: x["distanceMiles"])
+                        filtered_observations = sorted_by_dist[:max(20, len(strictly_within))]
                     source_name = "eBird API (Live)"
-        except Exception:
-            pass
+        except Exception as e:
+            print("eBird API query failed:", e)
 
     # 2. Query GBIF eBird Observation Dataset if live query produced no records
     if not filtered_observations:
@@ -1416,6 +1435,7 @@ def get_ebird_sightings_data(lat: float, lon: float, radius_miles: float = 0.5, 
                 "datasetKey": "4fa7b334-ce0d-4e88-aaae-2e0c138d049e",
                 "decimalLatitude": f"{lat - lat_delta:.5f},{lat + lat_delta:.5f}",
                 "decimalLongitude": f"{lon - lon_delta:.5f},{lon + lon_delta:.5f}",
+                "eventDate": f"{cutoff_dt.strftime('%Y-%m-%d')},{now.strftime('%Y-%m-%d')}",
                 "limit": 100,
             })
             req = urllib.request.Request(
@@ -1427,7 +1447,8 @@ def get_ebird_sightings_data(lat: float, lon: float, radius_miles: float = 0.5, 
                 for rec in gbif_data.get("results", []):
                     rec_lat = rec.get("decimalLatitude")
                     rec_lon = rec.get("decimalLongitude")
-                    if rec_lat is not None and rec_lon is not None:
+                    obs_dt = (rec.get("eventDate") or "")[:16].replace("T", " ")
+                    if rec_lat is not None and rec_lon is not None and obs_dt >= cutoff_str:
                         d_mi = calculate_distance_miles(lat, lon, float(rec_lat), float(rec_lon))
                         if d_mi <= radius_miles:
                             sci = rec.get("species") or rec.get("scientificName") or ""
@@ -1440,7 +1461,7 @@ def get_ebird_sightings_data(lat: float, lon: float, radius_miles: float = 0.5, 
                                 "sciName": sci,
                                 "locId": rec.get("locality", "Local Checklist"),
                                 "locName": rec.get("locality") or rec.get("municipality") or "eBird Checklist",
-                                "obsDt": (rec.get("eventDate") or "")[:16].replace("T", " "),
+                                "obsDt": obs_dt,
                                 "howMany": int(rec.get("individualCount") or 1),
                                 "lat": float(rec_lat),
                                 "lng": float(rec_lon),
@@ -1455,11 +1476,17 @@ def get_ebird_sightings_data(lat: float, lon: float, radius_miles: float = 0.5, 
         except Exception:
             pass
 
-    # 3. Fallback to authentic local observations dataset within radius_miles
+    # 3. Fallback to authentic local observations dataset within radius_miles and strictly within the last 30 days
     if not filtered_observations:
         filtered_observations = generate_local_ebird_observations(lat, lon, radius_miles, days)
-        filtered_observations = [o for o in filtered_observations if o["distanceMiles"] <= radius_miles]
         source_name = "eBird Observation Dataset"
+
+    # Strictly enforce 0.5 mile radius and 30 day cutoff for fallback
+    if not active_key or not filtered_observations:
+        filtered_observations = [
+            o for o in filtered_observations
+            if o["distanceMiles"] <= radius_miles and o["obsDt"] >= cutoff_str
+        ]
 
     # Compute Top 5 Most Recent (distinct species with latest sighting)
     recent_seen = set()
@@ -1544,7 +1571,7 @@ def get_ebird_sightings_data(lat: float, lon: float, radius_miles: float = 0.5, 
 def get_ebird_sightings(
     lat: Optional[float] = Query(None),
     lon: Optional[float] = Query(None),
-    radius_miles: float = Query(0.5, ge=0.1, le=10.0),
+    radius_miles: float = Query(1.0, ge=0.1, le=10.0),
     days: int = Query(30, ge=1, le=30),
 ):
     """

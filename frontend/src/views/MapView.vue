@@ -21,7 +21,9 @@ const ebirdSightingsData = ref(null)
 const ebirdLoading = ref(false)
 const ebirdActiveTab = ref('recent') // 'recent' | 'closest' | 'common'
 const selectedSightingId = ref(null)
+const isEbirdCardExpanded = ref(false)
 let ebirdMarkers = []
+let currentOpenEbirdPopup = null
 
 const token = import.meta.env.VITE_MAPBOX_TOKEN
 
@@ -117,9 +119,9 @@ const layers = ref([
   },
   {
     id: 'ebird-sightings-layer',
-    name: 'eBird Sightings (0.5 mi)',
+    name: 'eBird Sightings (1.0 mi)',
     type: 'overlay',
-    visible: true,
+    visible: false,
     toggleable: true,
     color: '#38bdf8',
     mapLayerIds: ['ebird-radius-fill', 'ebird-radius-outline'],
@@ -523,6 +525,7 @@ function toggleLayer(layer) {
   }
 
   if (layer.id === 'ebird-sightings-layer') {
+    isEbirdCardExpanded.value = layer.visible
     updateEbirdMarkersVisibility()
   }
 
@@ -530,6 +533,24 @@ function toggleLayer(layer) {
   for (const mapLayerId of layer.mapLayerIds) {
     if (mapInstance.getLayer(mapLayerId)) {
       mapInstance.setLayoutProperty(mapLayerId, 'visibility', visibility)
+    }
+  }
+}
+
+function toggleEbirdCard() {
+  isEbirdCardExpanded.value = !isEbirdCardExpanded.value
+  const layerConfig = layers.value.find((l) => l.id === 'ebird-sightings-layer')
+  if (layerConfig) {
+    layerConfig.visible = isEbirdCardExpanded.value
+    updateEbirdMarkersVisibility()
+    if (mapInstance) {
+      const visibility = isEbirdCardExpanded.value ? 'visible' : 'none'
+      if (mapInstance.getLayer('ebird-radius-fill')) {
+        mapInstance.setLayoutProperty('ebird-radius-fill', 'visibility', visibility)
+      }
+      if (mapInstance.getLayer('ebird-radius-outline')) {
+        mapInstance.setLayoutProperty('ebird-radius-outline', 'visibility', visibility)
+      }
     }
   }
 }
@@ -548,6 +569,10 @@ function updateHabitatObjectMarkersVisibility() {
 function updateEbirdMarkersVisibility() {
   const layerConfig = layers.value.find((l) => l.id === 'ebird-sightings-layer')
   const visible = layerConfig ? layerConfig.visible : true
+  if (!visible && currentOpenEbirdPopup) {
+    currentOpenEbirdPopup.remove()
+    currentOpenEbirdPopup = null
+  }
   for (const marker of ebirdMarkers) {
     const el = marker.getElement()
     if (el) {
@@ -624,13 +649,21 @@ function createGeoJSONCircle(center, radiusInMiles, points = 64) {
 
 function renderEbirdOnMap(data, centerLat, centerLon) {
   if (!mapInstance || !data) return
+  if (!mapInstance.isStyleLoaded()) {
+    mapInstance.once('style.load', () => renderEbirdOnMap(data, centerLat, centerLon))
+    return
+  }
 
   for (const m of ebirdMarkers) {
     m.remove()
   }
   ebirdMarkers = []
+  if (currentOpenEbirdPopup) {
+    currentOpenEbirdPopup.remove()
+    currentOpenEbirdPopup = null
+  }
 
-  const circleFeature = createGeoJSONCircle([centerLon, centerLat], 0.5)
+  const circleFeature = createGeoJSONCircle([centerLon, centerLat], 1.0)
   const srcId = 'ebird-radius-source'
   const fillId = 'ebird-radius-fill'
   const outlineId = 'ebird-radius-outline'
@@ -687,14 +720,20 @@ function renderEbirdOnMap(data, centerLat, centerLon) {
   for (const s of sightings) {
     const el = document.createElement('div')
     el.className = 'ebird-map-marker'
-    el.dataset.sightingId = s.id || s.speciesCode
+    el.dataset.sightingId = s.id || ''
+    el.dataset.speciesCode = s.speciesCode || ''
     if (!isVisible) el.style.display = 'none'
+
+    const markerBody = document.createElement('div')
+    markerBody.className = 'marker-body'
 
     const pin = document.createElement('div')
     pin.className = 'ebird-pin'
     pin.innerHTML = '🪶'
     pin.title = `${s.comName} (${s.distanceMiles} mi)`
-    el.appendChild(pin)
+
+    markerBody.appendChild(pin)
+    el.appendChild(markerBody)
 
     const popupHtml = `
       <div class="ebird-popup-content">
@@ -715,10 +754,29 @@ function renderEbirdOnMap(data, centerLat, centerLon) {
     `
 
     const popup = new mapboxgl.Popup({
-      offset: 16,
+      offset: 20,
       closeButton: true,
       className: 'ebird-mapbox-popup',
-    }).setHTML(popupHtml)
+    })
+      .setLngLat([s.lng, s.lat])
+      .setHTML(popupHtml)
+
+    popup.on('open', () => {
+      if (currentOpenEbirdPopup && currentOpenEbirdPopup !== popup) {
+        currentOpenEbirdPopup.remove()
+      }
+      currentOpenEbirdPopup = popup
+    })
+
+    popup.on('close', () => {
+      el.classList.remove('is-focused')
+      if (currentOpenEbirdPopup === popup) {
+        currentOpenEbirdPopup = null
+      }
+      if (selectedSightingId.value === (s.id || s.speciesCode)) {
+        selectedSightingId.value = null
+      }
+    })
 
     const marker = new mapboxgl.Marker({
       element: el,
@@ -728,10 +786,16 @@ function renderEbirdOnMap(data, centerLat, centerLon) {
       .setPopup(popup)
       .addTo(mapInstance)
 
-    el.addEventListener('click', (e) => {
-      e.stopPropagation()
-      selectedSightingId.value = s.id || s.speciesCode
-    })
+    // Capture-phase click listener to guarantee toggle behavior and prevent duplicate Mapbox events
+    el.addEventListener(
+      'click',
+      (e) => {
+        e.stopImmediatePropagation()
+        e.stopPropagation()
+        toggleSightingMarker(marker, s)
+      },
+      true
+    )
 
     ebirdMarkers.push(marker)
   }
@@ -741,11 +805,11 @@ async function loadEbirdSightings(lat, lon) {
   if (lat == null || lon == null) return
   ebirdLoading.value = true
   try {
-    const res = await fetch(`/api/ebird/sightings?lat=${lat}&lon=${lon}&radius_miles=0.5&days=30`)
+    const res = await fetch(`/api/ebird/sightings?lat=${lat}&lon=${lon}&radius_miles=1.0&days=30`)
     if (res.ok) {
       const data = await res.json()
       ebirdSightingsData.value = data
-      if (mapInstance && (mapInstance.isStyleLoaded() || mapInstance.loaded())) {
+      if (mapInstance) {
         renderEbirdOnMap(data, lat, lon)
       }
     }
@@ -756,11 +820,46 @@ async function loadEbirdSightings(lat, lon) {
   }
 }
 
+function toggleSightingMarker(marker, sighting) {
+  const sId = sighting.id || sighting.speciesCode
+  const popup = marker.getPopup()
+  const isCurrentlyOpen = popup && popup.isOpen()
+
+  if (isCurrentlyOpen) {
+    // If popup is already open, clicking the sighting icon closes it
+    popup.remove()
+    currentOpenEbirdPopup = null
+    selectedSightingId.value = null
+    for (const m of ebirdMarkers) {
+      m.getElement()?.classList.remove('is-focused')
+    }
+  } else {
+    // If another popup was open, close it first
+    if (currentOpenEbirdPopup && currentOpenEbirdPopup !== popup) {
+      currentOpenEbirdPopup.remove()
+      currentOpenEbirdPopup = null
+    }
+
+    // Set focus on this marker
+    for (const m of ebirdMarkers) {
+      m.getElement()?.classList.remove('is-focused')
+    }
+    marker.getElement()?.classList.add('is-focused')
+    selectedSightingId.value = sId
+
+    if (popup) {
+      popup.setLngLat([sighting.lng, sighting.lat])
+      popup.addTo(mapInstance)
+      currentOpenEbirdPopup = popup
+    }
+  }
+}
+
 function focusOnSighting(item) {
   if (!item || !mapInstance) return
   const sId = item.id || item.speciesCode
-  selectedSightingId.value = sId
 
+  // 1. Ensure the eBird layer is visible
   const layerConfig = layers.value.find((l) => l.id === 'ebird-sightings-layer')
   if (layerConfig && !layerConfig.visible) {
     layerConfig.visible = true
@@ -771,20 +870,68 @@ function focusOnSighting(item) {
     }
   }
 
-  mapInstance.flyTo({
-    center: [item.lng, item.lat],
-    zoom: Math.max(mapInstance.getZoom(), 17),
-    speed: 1.2,
-    essential: true,
-  })
-
-  const targetMarker = ebirdMarkers.find(
+  // 2. Find target marker matching exact id, speciesCode, or coordinates
+  let targetMarker = ebirdMarkers.find(
     (m) => m.getElement()?.dataset.sightingId === sId
   )
+  if (!targetMarker && item.speciesCode) {
+    targetMarker = ebirdMarkers.find(
+      (m) => m.getElement()?.dataset.speciesCode === item.speciesCode
+    )
+  }
+  if (!targetMarker && item.lng != null && item.lat != null) {
+    targetMarker = ebirdMarkers.find((m) => {
+      const pos = m.getLngLat()
+      return (
+        Math.abs(pos.lng - item.lng) < 0.0002 &&
+        Math.abs(pos.lat - item.lat) < 0.0002
+      )
+    })
+  }
+
+  const popup = targetMarker?.getPopup()
+  if (selectedSightingId.value === sId && popup && popup.isOpen()) {
+    popup.remove()
+    currentOpenEbirdPopup = null
+    selectedSightingId.value = null
+    targetMarker?.getElement()?.classList.remove('is-focused')
+    return
+  }
+
+  selectedSightingId.value = sId
+
+  // 3. Highlight target marker with pulsing beacon and high z-index
+  for (const m of ebirdMarkers) {
+    m.getElement()?.classList.remove('is-focused')
+  }
+  if (targetMarker) {
+    const el = targetMarker.getElement()
+    if (el) {
+      el.classList.add('is-focused')
+    }
+  }
+
+  // 4. Smoothly fly map to coordinates
+  const targetLng = item.lng ?? targetMarker?.getLngLat().lng
+  const targetLat = item.lat ?? targetMarker?.getLngLat().lat
+  if (targetLng != null && targetLat != null) {
+    mapInstance.flyTo({
+      center: [targetLng, targetLat],
+      zoom: Math.max(mapInstance.getZoom(), 17.5),
+      speed: 1.4,
+      essential: true,
+    })
+  }
+
+  // 5. Open popup explicitly (closing any previous popup)
   if (targetMarker) {
     const popup = targetMarker.getPopup()
-    if (popup && !popup.isOpen()) {
-      targetMarker.togglePopup()
+    if (popup) {
+      if (currentOpenEbirdPopup && currentOpenEbirdPopup !== popup) {
+        currentOpenEbirdPopup.remove()
+      }
+      popup.addTo(mapInstance)
+      currentOpenEbirdPopup = popup
     }
   }
 }
@@ -1134,6 +1281,9 @@ onMounted(async () => {
       if (data.habitatSegmentation) {
         registerHabitatLayers(data.habitatSegmentation)
       }
+      if (lat != null && lon != null) {
+        loadEbirdSightings(lat, lon)
+      }
     }
   } catch {
     const local = localStorage.getItem('harmonee_address')
@@ -1278,6 +1428,11 @@ onMounted(async () => {
     if (habitatObjects.value.length > 0) {
       renderHabitatObjectMarkers()
     }
+    if (ebirdSightingsData.value && lat != null && lon != null) {
+      renderEbirdOnMap(ebirdSightingsData.value, lat, lon)
+    } else if (lat != null && lon != null) {
+      loadEbirdSightings(lat, lon)
+    }
     if (rawParcel) {
       const bounds = getParcelBounds(rawParcel)
       if (bounds) {
@@ -1318,6 +1473,14 @@ onBeforeUnmount(() => {
     marker.remove()
   }
   objectMarkersMap.clear()
+  for (const m of ebirdMarkers) {
+    m.remove()
+  }
+  ebirdMarkers = []
+  if (currentOpenEbirdPopup) {
+    currentOpenEbirdPopup.remove()
+    currentOpenEbirdPopup = null
+  }
   if (mapInstance) {
     mapInstance.remove()
     mapInstance = null
@@ -1338,6 +1501,121 @@ onBeforeUnmount(() => {
         <div v-if="parcelAcreage" class="acreage-text">
           Parcel Size: {{ parcelAcreage }}
         </div>
+      </div>
+
+      <!-- eBird Local Sightings Card (Positioned directly below Property Info for high visibility) -->
+      <div v-if="currentAddress" class="ebird-panel">
+        <div
+          class="panel-header-row clickable-header"
+          title="Click to expand/collapse local bird sightings"
+          @click="toggleEbirdCard"
+        >
+          <div class="panel-title-wrap">
+            <span class="ebird-badge-icon">🪶</span>
+            <div>
+              <div class="panel-heading">Local Bird Sightings</div>
+              <div class="ebird-subtitle">eBird • 1.0 mi radius • Last 30 days</div>
+            </div>
+          </div>
+          <div class="panel-header-actions">
+            <span v-if="ebirdLoading" class="ebird-count-badge loading">
+              Loading...
+            </span>
+            <span v-else-if="ebirdSightingsData" class="ebird-count-badge">
+              {{ ebirdSightingsData.totalSightings }} spotted
+            </span>
+            <span class="expand-chevron">
+              {{ isEbirdCardExpanded ? '▾' : '▸' }}
+            </span>
+          </div>
+        </div>
+
+        <template v-if="isEbirdCardExpanded">
+          <!-- 3 Tabs: Top 5 Recent, Closest, Most Common -->
+          <div class="ebird-tabs-nav">
+            <button
+              type="button"
+              :class="['ebird-tab-btn', { active: ebirdActiveTab === 'recent' }]"
+              @click="ebirdActiveTab = 'recent'"
+            >
+              🕒 Recent
+            </button>
+            <button
+              type="button"
+              :class="['ebird-tab-btn', { active: ebirdActiveTab === 'closest' }]"
+              @click="ebirdActiveTab = 'closest'"
+            >
+              📍 Closest
+            </button>
+            <button
+              type="button"
+              :class="['ebird-tab-btn', { active: ebirdActiveTab === 'common' }]"
+              @click="ebirdActiveTab = 'common'"
+            >
+              📊 Common
+            </button>
+          </div>
+
+          <div v-if="ebirdLoading" class="ebird-loading-state">
+            <span class="ebird-spinner"></span>
+            <span>Loading local sightings...</span>
+          </div>
+
+          <div v-else-if="currentTopList.length > 0" class="ebird-items-list">
+            <div
+              v-for="(item, idx) in currentTopList"
+              :key="item.id || item.speciesCode || idx"
+              :class="[
+                'ebird-item-card',
+                { active: selectedSightingId === (item.id || item.speciesCode) },
+              ]"
+              title="Click to view on map"
+              @click="focusOnSighting(item)"
+            >
+              <div class="card-item-rank">#{{ idx + 1 }}</div>
+              <div class="card-item-body">
+                <div class="card-item-header">
+                  <span class="card-item-name">{{ item.comName }}</span>
+                  <span class="card-item-dist-pill">
+                    {{ (item.minDistanceMiles ?? item.distanceMiles)?.toFixed(2) }} mi
+                  </span>
+                </div>
+                <div class="card-item-sci">{{ item.sciName }}</div>
+                <div class="card-item-details">
+                  <template v-if="ebirdActiveTab === 'common'">
+                    <span class="detail-badge common-badge">
+                      {{ item.observationCount }} reports ({{ item.totalIndividuals }} birds)
+                    </span>
+                    <span class="detail-badge loc-badge" :title="item.locName">{{ item.locName }}</span>
+                  </template>
+                  <template v-else-if="ebirdActiveTab === 'closest'">
+                    <span class="detail-badge dist-badge">
+                      {{ item.distanceMiles }} mi away
+                    </span>
+                    <span class="detail-badge date-badge">{{ formatSightingDate(item.obsDt) }}</span>
+                    <span class="detail-badge loc-badge" :title="item.locName">{{ item.locName }}</span>
+                  </template>
+                  <template v-else>
+                    <span class="detail-badge date-badge">
+                      {{ formatSightingDate(item.obsDt) }}
+                    </span>
+                    <span v-if="item.howMany" class="detail-badge count-badge">
+                      ×{{ item.howMany }}
+                    </span>
+                    <span class="detail-badge loc-badge" :title="item.locName">{{ item.locName }}</span>
+                  </template>
+                </div>
+              </div>
+              <div class="card-locate-icon" title="Pan to marker on map">
+                🎯
+              </div>
+            </div>
+          </div>
+
+          <div v-else class="ebird-empty-state">
+            No sightings recorded within 1.0 mile in the last 30 days.
+          </div>
+        </template>
       </div>
 
       <div v-if="ecoregions" class="ecoregion-panel">
@@ -1511,6 +1789,9 @@ onBeforeUnmount(() => {
               <span v-if="!layer.toggleable" class="layer-tag">Base</span>
               <span v-else-if="layer.id === 'habitat-objects-layer'" class="layer-tag count-tag">
                 {{ habitatObjects.length }}
+              </span>
+              <span v-else-if="layer.id === 'ebird-sightings-layer'" class="layer-tag count-tag">
+                {{ ebirdSightingsData?.totalSightings || 0 }}
               </span>
               <span v-else-if="layer.percentage != null" class="layer-tag">
                 {{ layer.percentage }}%
@@ -1959,7 +2240,7 @@ onBeforeUnmount(() => {
   position: absolute;
   top: 14px;
   left: 14px;
-  z-index: 5;
+  z-index: 20;
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
@@ -1972,7 +2253,7 @@ onBeforeUnmount(() => {
   position: absolute;
   top: 14px;
   right: 14px;
-  z-index: 5;
+  z-index: 20;
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
@@ -1987,6 +2268,7 @@ onBeforeUnmount(() => {
 .layers-panel,
 .ecoregion-panel,
 .bird-panel,
+.ebird-panel,
 .keystone-panel {
   padding: 0.65rem 0.85rem;
   background-color: rgba(30, 58, 47, 0.9);
@@ -2652,13 +2934,14 @@ onBeforeUnmount(() => {
   inset: 0;
   width: 100%;
   height: 100%;
+  z-index: 1;
 }
 
 .capture-date {
   position: absolute;
   bottom: 12px;
   right: 12px;
-  z-index: 5;
+  z-index: 20;
   padding: 0.25rem 0.6rem;
   font-size: 0.75rem;
   color: var(--text-cream);
@@ -3394,7 +3677,7 @@ onBeforeUnmount(() => {
   cursor: grab;
   user-select: none;
   will-change: transform;
-  z-index: 5;
+  z-index: 2;
   /* Crucial: NO CSS transition or transform overrides on this root marker element.
      Mapbox GL manages style.transform synchronously on every animation frame during pan/zoom. */
 }
@@ -3414,7 +3697,7 @@ onBeforeUnmount(() => {
 .habitat-object-marker:hover .marker-body {
   transform: scale(1.15) translateY(-3px);
   filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.45));
-  z-index: 25;
+  z-index: 5;
 }
 
 .habitat-object-marker .marker-pin {
@@ -3452,5 +3735,446 @@ onBeforeUnmount(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   pointer-events: none;
+}
+
+/* =====================================================================
+   eBird Local Sightings Card & Map Styling
+   ===================================================================== */
+.ebird-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  border-left: 3px solid #38bdf8;
+  position: relative;
+  z-index: 25;
+}
+
+.panel-header-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.panel-header-row.clickable-header {
+  cursor: pointer;
+  user-select: none;
+  border-radius: 4px;
+  padding: 2px 3px;
+  margin: -2px -3px;
+  transition: opacity 0.15s ease, background-color 0.15s ease;
+}
+
+.panel-header-row.clickable-header:hover {
+  opacity: 0.95;
+  background-color: rgba(255, 255, 255, 0.04);
+}
+
+.panel-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.expand-chevron {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #38bdf8;
+  transition: transform 0.2s ease;
+  line-height: 1;
+}
+
+.panel-title-wrap {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+}
+
+.ebird-badge-icon {
+  font-size: 1.15rem;
+  line-height: 1;
+  margin-top: 1px;
+}
+
+.ebird-subtitle {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  opacity: 0.9;
+  margin-top: -0.2rem;
+}
+
+.ebird-count-badge {
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background-color: rgba(56, 189, 248, 0.16);
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  color: #38bdf8;
+  white-space: nowrap;
+}
+
+.ebird-count-badge.loading {
+  background-color: rgba(245, 158, 11, 0.16);
+  border-color: rgba(245, 158, 11, 0.4);
+  color: #fbbf24;
+}
+
+.ebird-tabs-nav {
+  display: flex;
+  gap: 0.25rem;
+  background-color: rgba(18, 36, 29, 0.75);
+  padding: 3px;
+  border-radius: 6px;
+  border: 1px solid rgba(61, 102, 86, 0.45);
+}
+
+.ebird-tab-btn {
+  flex: 1;
+  padding: 4px 5px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.ebird-tab-btn:hover {
+  color: var(--text-cream);
+  background-color: rgba(255, 255, 255, 0.06);
+}
+
+.ebird-tab-btn.active {
+  background-color: #0284c7;
+  color: #ffffff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+}
+
+.ebird-loading-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  padding: 0.75rem 0;
+}
+
+.ebird-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(56, 189, 248, 0.3);
+  border-top-color: #38bdf8;
+  border-radius: 50%;
+  animation: ebird-spin 0.8s linear infinite;
+}
+
+@keyframes ebird-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.ebird-items-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  max-height: 275px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.ebird-item-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+  padding: 0.45rem 0.55rem;
+  background-color: rgba(22, 44, 35, 0.75);
+  border: 1px solid rgba(61, 102, 86, 0.5);
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
+}
+
+.ebird-item-card:hover {
+  background-color: rgba(30, 60, 48, 0.95);
+  border-color: #38bdf8;
+  transform: translateY(-1px);
+}
+
+.ebird-item-card.active {
+  background-color: rgba(2, 132, 199, 0.22);
+  border-color: #38bdf8;
+  box-shadow: 0 0 0 1px #38bdf8;
+}
+
+.card-item-rank {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #f2cc8f;
+  background-color: rgba(242, 204, 143, 0.15);
+  border-radius: 3px;
+  padding: 1px 4px;
+  line-height: 1.2;
+  margin-top: 1px;
+  flex-shrink: 0;
+}
+
+.card-item-body {
+  flex: 1;
+  min-width: 0;
+}
+
+.card-item-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.3rem;
+}
+
+.card-item-name {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: var(--text-cream);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-item-dist-pill {
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: #38bdf8;
+  background-color: rgba(56, 189, 248, 0.12);
+  padding: 1px 5px;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.card-item-sci {
+  font-size: 0.7rem;
+  font-style: italic;
+  color: var(--text-muted);
+  margin-bottom: 0.25rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-item-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.detail-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 5px;
+  border-radius: 4px;
+  font-size: 0.67rem;
+  background-color: rgba(18, 36, 29, 0.8);
+  color: var(--text-muted);
+  border: 1px solid rgba(61, 102, 86, 0.4);
+}
+
+.detail-badge.common-badge {
+  color: #f2cc8f;
+  border-color: rgba(242, 204, 143, 0.35);
+  background-color: rgba(242, 204, 143, 0.1);
+}
+
+.detail-badge.dist-badge {
+  color: #38bdf8;
+  border-color: rgba(56, 189, 248, 0.3);
+  background-color: rgba(56, 189, 248, 0.1);
+}
+
+.detail-badge.date-badge {
+  color: #a7f3d0;
+  border-color: rgba(167, 243, 208, 0.3);
+  background-color: rgba(16, 185, 129, 0.1);
+}
+
+.detail-badge.count-badge {
+  color: #f472b6;
+  border-color: rgba(244, 114, 182, 0.35);
+  background-color: rgba(244, 114, 182, 0.1);
+}
+
+.detail-badge.loc-badge {
+  max-width: 140px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-locate-icon {
+  font-size: 0.85rem;
+  opacity: 0.45;
+  transition: opacity 0.15s ease;
+  align-self: center;
+  flex-shrink: 0;
+}
+
+.ebird-item-card:hover .card-locate-icon {
+  opacity: 1;
+}
+
+.ebird-empty-state {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  padding: 0.6rem 0;
+  text-align: center;
+  line-height: 1.35;
+}
+
+/* Map Markers & Popups */
+.ebird-map-marker {
+  cursor: pointer;
+  user-select: none;
+  will-change: transform;
+  z-index: 2;
+  /* Crucial: NO CSS transition or transform overrides on this root marker element.
+     Mapbox GL manages style.transform synchronously on every animation frame during pan/zoom. */
+}
+
+.ebird-map-marker .marker-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transition: transform 0.15s ease, filter 0.15s ease;
+  pointer-events: auto;
+}
+
+.ebird-pin {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: #0284c7;
+  border: 2px solid #38bdf8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
+  position: relative;
+}
+
+.ebird-map-marker:hover .marker-body {
+  transform: scale(1.22);
+  filter: drop-shadow(0 4px 12px rgba(56, 189, 248, 0.65));
+}
+
+.ebird-map-marker:hover .ebird-pin {
+  border-color: #ffffff;
+}
+
+/* Focused sighting selected from card */
+.ebird-map-marker.is-focused {
+  z-index: 5 !important;
+}
+
+.ebird-map-marker.is-focused .marker-body {
+  transform: scale(1.42) !important;
+  filter: drop-shadow(0 6px 18px rgba(0, 0, 0, 0.7)) !important;
+}
+
+.ebird-map-marker.is-focused .ebird-pin {
+  background: #0284c7 !important;
+  border: 3px solid #f2cc8f !important;
+  box-shadow: 0 0 0 4px rgba(242, 204, 143, 0.4), 0 6px 20px rgba(0, 0, 0, 0.6) !important;
+}
+
+:deep(.ebird-mapbox-popup .mapboxgl-popup-content) {
+  background-color: rgba(18, 36, 29, 0.96) !important;
+  border: 1px solid #38bdf8 !important;
+  border-radius: 8px !important;
+  color: #f4f1ea !important;
+  padding: 0.75rem 0.95rem !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.6) !important;
+  font-family: inherit !important;
+  min-width: 210px !important;
+}
+
+:deep(.ebird-mapbox-popup .mapboxgl-popup-close-button) {
+  color: #94a3b8 !important;
+  font-size: 16px !important;
+  padding: 3px 7px !important;
+  outline: none !important;
+}
+
+:deep(.ebird-mapbox-popup .mapboxgl-popup-close-button:hover) {
+  color: #ffffff !important;
+  background: transparent !important;
+}
+
+:deep(.ebird-popup-content) {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+:deep(.popup-bird-header) {
+  border-bottom: 1px solid rgba(56, 189, 248, 0.25);
+  padding-bottom: 0.35rem;
+}
+
+:deep(.popup-bird-name) {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: #f4f1ea;
+}
+
+:deep(.popup-bird-sci) {
+  font-size: 0.74rem;
+  font-style: italic;
+  color: #94a3b8;
+}
+
+:deep(.popup-tag-row) {
+  display: flex;
+  gap: 0.35rem;
+  margin-bottom: 0.25rem;
+}
+
+:deep(.popup-tag) {
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+:deep(.popup-tag.dist-badge) {
+  background: rgba(56, 189, 248, 0.18);
+  color: #38bdf8;
+  border: 1px solid rgba(56, 189, 248, 0.4);
+}
+
+:deep(.popup-tag.count-badge) {
+  background: rgba(244, 114, 182, 0.18);
+  color: #f472b6;
+  border: 1px solid rgba(244, 114, 182, 0.4);
+}
+
+:deep(.popup-time),
+:deep(.popup-loc) {
+  font-size: 0.72rem;
+  color: #cbd5e1;
+  line-height: 1.35;
+}
+
+:deep(.popup-sub a) {
+  color: #38bdf8;
+  font-size: 0.7rem;
+  text-decoration: underline;
+  display: inline-block;
+  margin-top: 0.2rem;
 }
 </style>
