@@ -1,0 +1,242 @@
+/* Shared Map Sidebar Panel, Floating Toolbar, and Modal Form Primitives */
+
+.map-panel {
+  padding: 0.65rem 0.85rem;
+  background-color: rgba(30, 58, 47, 0.9);
+  border: 1px solid var(--border-sage);
+  border-radius: 6px;
+  text-align: left;
+}
+
+.panel-heading {
+  font-size: 0.75rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: 0.4rem;
+}
+
+.section-divider {
+  height: 1px;
+  background-color: var(--border-sage);
+  margin: 0.6rem 0 0.5rem 0;
+  opacity: 0.6;
+}
+
+/* Shared Floating Toolbar Primitives */
+.toolbar-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+
+.toolbar-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.toolbar-title {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #e8f5e9;
+}
+
+.toolbar-hint {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  flex: 1;
+  text-align: center;
+}
+
+.toolbar-close-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+  cursor: pointer;
+  padding: 0.1rem 0.3rem;
+  border-radius: 3px;
+}
+
+.toolbar-close-btn:hover {
+  color: #fff;
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.toolbar-palette {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.palette-chip {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.55rem;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text-cream);
+  background-color: rgba(0, 0, 0, 0.35);
+  border: 1.5px solid rgba(255, 255, 255, 0.15);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.palette-chip:hover {
+  border-color: var(--chip-color);
+  background-color: rgba(0, 0, 0, 0.5);
+}
+
+.palette-chip.active {
+  border-color: var(--chip-color);
+  background-color: rgba(255, 255, 255, 0.12);
+  box-shadow: 0 0 10px var(--chip-color);
+  color: #fff;
+}
+
+.chip-swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 2px;
+  display: inline-block;
+}
+
+.chip-icon {
+  font-size: 0.85rem;
+}
+
+.toolbar-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding-top: 0.3rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.action-btn {
+  padding: 0.25rem 0.55rem;
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--text-cream);
+  background-color: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--border-sage);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.action-btn:hover:not(:disabled) {
+  border-color: var(--text-cream);
+}
+
+.action-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.action-btn-primary {
+  padding: 0.3rem 0.8rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #fff;
+  background-color: #2d6a4f;
+  border: 1px solid #52b788;
+  border-radius: 4px;
+  cursor: pointer;
+  box-shadow: 0 0 10px rgba(82, 183, 136, 0.3);
+  transition: all 0.15s ease;
+}
+
+.action-btn-primary:hover:not(:disabled) {
+  background-color: #1b4332;
+  border-color: #74c69d;
+  box-shadow: 0 0 14px rgba(116, 198, 157, 0.5);
+}
+
+.action-btn-primary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  box-shadow: none;
+}
+
+/* Shared Form & Button Primitives */
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.form-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-cream);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.form-input,
+.form-select,
+.form-textarea {
+  width: 100%;
+  padding: 0.45rem 0.65rem;
+  background-color: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border-sage);
+  border-radius: 6px;
+  color: #f1f5f9;
+  font-size: 0.82rem;
+  outline: none;
+  font-family: inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.form-input:focus,
+.form-select:focus,
+.form-textarea:focus {
+  border-color: #52b788;
+  box-shadow: 0 0 0 2px rgba(82, 183, 136, 0.25);
+}
+
+.form-textarea {
+  resize: vertical;
+  min-height: 60px;
+}
+
+.btn-danger {
+  padding: 0.4rem 0.75rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #f87171;
+  background-color: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-danger:hover {
+  background-color: #ef4444;
+  color: #fff;
+}
+
+.btn-primary {
+  padding: 0.4rem 0.95rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #fff;
+  background-color: #2d6a4f;
+  border: 1px solid #52b788;
+  border-radius: 5px;
+  cursor: pointer;
+  box-shadow: 0 0 10px rgba(82, 183, 136, 0.3);
+  transition: all 0.15s ease;
+}
+
+.btn-primary:hover {
+  background-color: #1b4332;
+  border-color: #74c69d;
+}

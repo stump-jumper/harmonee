@@ -1,192 +1,5 @@
-"""
-Harmonee Feeder Birds Database & Likelihood Calculator.
+"""Curated catalog of North American backyard birds with seasonal presence and food affinities."""
 
-Self-contained dataset mapping North American backyard birds to:
-- Seasonal presence across Level 1 Ecoregions (or broad geographic zones)
-- Feeder propensity (how readily the species visits artificial feeders)
-- Food preference scores (0.0 = never/rare, 1.0 = highly preferred staple)
-"""
-
-from typing import List, Dict, Optional, Any
-from datetime import datetime
-
-# Common feeder food categories
-FEEDER_FOODS = {
-    "sunflower_black_oil": {
-        "id": "sunflower_black_oil",
-        "name": "Black-Oil Sunflower Seeds",
-        "description": "High oil content, thin shells. Universal favorite for cardinals, chickadees, finches, nuthatches.",
-    },
-    "sunflower_striped": {
-        "id": "sunflower_striped",
-        "name": "Striped Sunflower Seeds",
-        "description": "Thicker shell. Favored by larger beaks: Blue Jays, Cardinals, Grosbeaks.",
-    },
-    "sunflower_chips": {
-        "id": "sunflower_chips",
-        "name": "Sunflower Hearts / Chips (No Shell)",
-        "description": "No mess, universally accessible to both small and large songbirds.",
-    },
-    "millet_white": {
-        "id": "millet_white",
-        "name": "White Proso Millet",
-        "description": "Ground and platform seed favored by juncos, native sparrows, doves, towhees.",
-    },
-    "nyjer": {
-        "id": "nyjer",
-        "name": "Nyjer / Thistle Seed",
-        "description": "Tiny black seed loved by American Goldfinches, Pine Siskins, redpolls.",
-    },
-    "safflower": {
-        "id": "safflower",
-        "name": "Safflower Seeds",
-        "description": "Bitter taste to squirrels & grackles; favorite of Cardinals, Nuthatches, Chickadees.",
-    },
-    "peanuts_shelled": {
-        "id": "peanuts_shelled",
-        "name": "Peanuts (Shelled / Halves)",
-        "description": "High fat & protein. Woodpeckers, jays, nuthatches, chickadees, titmice.",
-    },
-    "peanuts_in_shell": {
-        "id": "peanuts_in_shell",
-        "name": "Peanuts in Shell",
-        "description": "Loved by Blue Jays, Scrub Jays, larger woodpeckers, and nuthatches.",
-    },
-    "suet": {
-        "id": "suet",
-        "name": "Suet / Fat Cake",
-        "description": "Rendered beef fat / seed cake. Woodpeckers, nuthatches, chickadees, wrens, starlings.",
-    },
-    "cracked_corn": {
-        "id": "cracked_corn",
-        "name": "Cracked Corn",
-        "description": "Affordable grain for mourning doves, quails, turkeys, jays, ducks.",
-    },
-    "nectar": {
-        "id": "nectar",
-        "name": "Nectar (Sugar Water)",
-        "description": "4:1 water to white cane sugar. Hummingbirds and Orioles.",
-    },
-    "mealworms": {
-        "id": "mealworms",
-        "name": "Mealworms (Dried or Live)",
-        "description": "Protein-rich favorite of Eastern & Western Bluebirds, robins, wrens, thrushes.",
-    },
-    "fruit_jelly": {
-        "id": "fruit_jelly",
-        "name": "Fruit, Oranges & Grape Jelly",
-        "description": "Spring and summer favorite for Baltimore and Bullock's Orioles, catbirds, tanagers.",
-    },
-}
-
-# Pre-set seed blends for quick convenience
-PRESET_FOOD_BLENDS = {
-    "wild_bird_basic": {
-        "id": "wild_bird_basic",
-        "name": "Classic Mixed Wild Bird Seed",
-        "foods": ["millet_white", "cracked_corn", "sunflower_striped"],
-    },
-    "premium_songbird": {
-        "id": "premium_songbird",
-        "name": "Premium Songbird Blend",
-        "foods": ["sunflower_black_oil", "millet_white", "safflower", "peanuts_shelled"],
-    },
-    "no_mess_patio": {
-        "id": "no_mess_patio",
-        "name": "No-Mess / Patio Blend",
-        "foods": ["sunflower_chips", "peanuts_shelled"],
-    },
-    "finch_special": {
-        "id": "finch_special",
-        "name": "Finch Blend",
-        "foods": ["nyjer", "sunflower_chips"],
-    },
-    "cardinal_blend": {
-        "id": "cardinal_blend",
-        "name": "Cardinal & Songbird Blend",
-        "foods": ["sunflower_black_oil", "safflower", "sunflower_striped"],
-    },
-    "woodpecker_treat": {
-        "id": "woodpecker_treat",
-        "name": "Woodpecker & Nuthatch Blend",
-        "foods": ["peanuts_shelled", "sunflower_chips", "suet"],
-    },
-    "hummingbird_nectar": {
-        "id": "hummingbird_nectar",
-        "name": "Hummingbird Nectar",
-        "foods": ["nectar"],
-    },
-    "suet_cake": {
-        "id": "suet_cake",
-        "name": "Pure Suet Cake",
-        "foods": ["suet"],
-    },
-}
-
-# Season helper
-def get_season_for_month(month: int) -> str:
-    """Return season code: 'spring', 'summer', 'fall', or 'winter'."""
-    if month in (3, 4, 5):
-        return "spring"
-    elif month in (6, 7, 8):
-        return "summer"
-    elif month in (9, 10, 11):
-        return "fall"
-    else:
-        return "winter"
-
-# EPA Level 1 Ecoregion / Geographic Zone mapping helper
-# Ecoregion codes:
-# 5: Northern Forests
-# 6: Northwestern Forested Mountains
-# 7: Marine West Coast Forest
-# 8: Eastern Temperate Forests
-# 9: Great Plains
-# 10: North American Deserts
-# 11: Mediterranean California
-# 12: Southern Semi-Arid Highlands
-# 13: Temperate Sierras
-def normalize_ecoregion_zone(ecoregions: Optional[dict] = None, lat: Optional[float] = None, lon: Optional[float] = None) -> str:
-    """Determine broad ecoregion zone key (e.g. '8_eastern_temperate_forests')."""
-    if ecoregions and isinstance(ecoregions, dict):
-        l1 = str(ecoregions.get("level1", "")).lower()
-        if "8" in l1 or "eastern temperate" in l1:
-            return "8_eastern_temperate_forests"
-        if "5" in l1 or "northern forest" in l1:
-            return "5_northern_forests"
-        if "9" in l1 or "great plains" in l1:
-            return "9_great_plains"
-        if "6" in l1 or "northwestern forested" in l1:
-            return "6_northwestern_forested_mountains"
-        if "7" in l1 or "marine west coast" in l1:
-            return "7_marine_west_coast"
-        if "10" in l1 or "desert" in l1:
-            return "10_deserts"
-        if "11" in l1 or "mediterranean" in l1:
-            return "11_mediterranean_california"
-
-    # Fallback by latitude / longitude if ecoregion string isn't supplied
-    if lon is not None and lat is not None:
-        if lon < -120 and lat >= 35:
-            return "7_marine_west_coast"
-        elif lon < -115 and lat < 38:
-            return "11_mediterranean_california"
-        elif lon < -104 and lat >= 35:
-            return "6_northwestern_forested_mountains"
-        elif lon < -100 and lat < 35:
-            return "10_deserts"
-        elif -104 <= lon <= -95:
-            return "9_great_plains"
-        elif lon > -95:
-            if lat > 45:
-                return "5_northern_forests"
-            return "8_eastern_temperate_forests"
-
-    # Default to Eastern Temperate Forests if unknown
-    return "8_eastern_temperate_forests"
-
-
-# Curated catalog of backyard birds with seasonal presence and food affinities
 FEEDER_SPECIES = [
     {
         "id": "northern_cardinal",
@@ -204,18 +17,9 @@ FEEDER_SPECIES = [
             "11_mediterranean_california": {"spring": 0.0, "summer": 0.0, "fall": 0.0, "winter": 0.0},
         },
         "foodPreferences": {
-            "sunflower_black_oil": 1.0,
-            "safflower": 0.95,
-            "sunflower_chips": 0.95,
-            "sunflower_striped": 0.85,
-            "peanuts_shelled": 0.65,
-            "millet_white": 0.55,
-            "cracked_corn": 0.45,
-            "suet": 0.20,
-            "nyjer": 0.0,
-            "nectar": 0.0,
-            "mealworms": 0.30,
-            "fruit_jelly": 0.10,
+            "sunflower_black_oil": 1.0, "safflower": 0.95, "sunflower_chips": 0.95, "sunflower_striped": 0.85,
+            "peanuts_shelled": 0.65, "millet_white": 0.55, "cracked_corn": 0.45, "suet": 0.20,
+            "nyjer": 0.0, "nectar": 0.0, "mealworms": 0.30, "fruit_jelly": 0.10,
         },
     },
     {
@@ -234,19 +38,9 @@ FEEDER_SPECIES = [
             "11_mediterranean_california": {"spring": 0.0, "summer": 0.0, "fall": 0.0, "winter": 0.0},
         },
         "foodPreferences": {
-            "peanuts_in_shell": 1.0,
-            "peanuts_shelled": 0.95,
-            "sunflower_black_oil": 0.90,
-            "sunflower_striped": 0.90,
-            "sunflower_chips": 0.85,
-            "suet": 0.70,
-            "cracked_corn": 0.60,
-            "millet_white": 0.20,
-            "safflower": 0.20,
-            "nyjer": 0.0,
-            "nectar": 0.0,
-            "mealworms": 0.50,
-            "fruit_jelly": 0.20,
+            "peanuts_in_shell": 1.0, "peanuts_shelled": 0.95, "sunflower_black_oil": 0.90, "sunflower_striped": 0.90,
+            "sunflower_chips": 0.85, "suet": 0.70, "cracked_corn": 0.60, "millet_white": 0.20,
+            "safflower": 0.20, "nyjer": 0.0, "nectar": 0.0, "mealworms": 0.50, "fruit_jelly": 0.20,
         },
     },
     {
@@ -265,18 +59,9 @@ FEEDER_SPECIES = [
             "11_mediterranean_california": {"spring": 0.0, "summer": 0.0, "fall": 0.0, "winter": 0.0},
         },
         "foodPreferences": {
-            "sunflower_black_oil": 1.0,
-            "sunflower_chips": 1.0,
-            "peanuts_shelled": 0.90,
-            "suet": 0.85,
-            "safflower": 0.75,
-            "mealworms": 0.70,
-            "nyjer": 0.30,
-            "sunflower_striped": 0.40,
-            "millet_white": 0.15,
-            "cracked_corn": 0.05,
-            "nectar": 0.0,
-            "fruit_jelly": 0.0,
+            "sunflower_black_oil": 1.0, "sunflower_chips": 1.0, "peanuts_shelled": 0.90, "suet": 0.85,
+            "safflower": 0.75, "mealworms": 0.70, "nyjer": 0.30, "sunflower_striped": 0.40,
+            "millet_white": 0.15, "cracked_corn": 0.05, "nectar": 0.0, "fruit_jelly": 0.0,
         },
     },
     {
@@ -295,18 +80,9 @@ FEEDER_SPECIES = [
             "11_mediterranean_california": {"spring": 0.0, "summer": 0.0, "fall": 0.0, "winter": 0.0},
         },
         "foodPreferences": {
-            "sunflower_black_oil": 1.0,
-            "sunflower_chips": 0.95,
-            "peanuts_shelled": 0.90,
-            "suet": 0.75,
-            "safflower": 0.70,
-            "mealworms": 0.65,
-            "sunflower_striped": 0.50,
-            "millet_white": 0.20,
-            "cracked_corn": 0.10,
-            "nyjer": 0.05,
-            "nectar": 0.0,
-            "fruit_jelly": 0.0,
+            "sunflower_black_oil": 1.0, "sunflower_chips": 0.95, "peanuts_shelled": 0.90, "suet": 0.75,
+            "safflower": 0.70, "mealworms": 0.65, "sunflower_striped": 0.50, "millet_white": 0.20,
+            "cracked_corn": 0.10, "nyjer": 0.05, "nectar": 0.0, "fruit_jelly": 0.0,
         },
     },
     {
@@ -325,18 +101,9 @@ FEEDER_SPECIES = [
             "11_mediterranean_california": {"spring": 0.40, "summer": 0.40, "fall": 0.40, "winter": 0.40},
         },
         "foodPreferences": {
-            "peanuts_shelled": 1.0,
-            "sunflower_black_oil": 0.95,
-            "suet": 0.90,
-            "sunflower_chips": 0.90,
-            "safflower": 0.65,
-            "mealworms": 0.60,
-            "sunflower_striped": 0.50,
-            "millet_white": 0.10,
-            "cracked_corn": 0.10,
-            "nyjer": 0.0,
-            "nectar": 0.0,
-            "fruit_jelly": 0.0,
+            "peanuts_shelled": 1.0, "sunflower_black_oil": 0.95, "suet": 0.90, "sunflower_chips": 0.90,
+            "safflower": 0.65, "mealworms": 0.60, "sunflower_striped": 0.50, "millet_white": 0.10,
+            "cracked_corn": 0.10, "nyjer": 0.0, "nectar": 0.0, "fruit_jelly": 0.0,
         },
     },
     {
@@ -355,18 +122,9 @@ FEEDER_SPECIES = [
             "11_mediterranean_california": {"spring": 0.65, "summer": 0.65, "fall": 0.65, "winter": 0.70},
         },
         "foodPreferences": {
-            "suet": 1.0,
-            "peanuts_shelled": 0.90,
-            "sunflower_black_oil": 0.80,
-            "sunflower_chips": 0.85,
-            "mealworms": 0.75,
-            "peanuts_in_shell": 0.50,
-            "millet_white": 0.10,
-            "cracked_corn": 0.10,
-            "safflower": 0.10,
-            "nyjer": 0.0,
-            "nectar": 0.0,
-            "fruit_jelly": 0.0,
+            "suet": 1.0, "peanuts_shelled": 0.90, "sunflower_black_oil": 0.80, "sunflower_chips": 0.85,
+            "mealworms": 0.75, "peanuts_in_shell": 0.50, "millet_white": 0.10, "cracked_corn": 0.10,
+            "safflower": 0.10, "nyjer": 0.0, "nectar": 0.0, "fruit_jelly": 0.0,
         },
     },
     {
@@ -385,17 +143,9 @@ FEEDER_SPECIES = [
             "11_mediterranean_california": {"spring": 0.75, "summer": 0.75, "fall": 0.75, "winter": 0.75},
         },
         "foodPreferences": {
-            "nyjer": 1.0,
-            "sunflower_chips": 0.95,
-            "sunflower_black_oil": 0.65,
-            "millet_white": 0.10,
-            "safflower": 0.05,
-            "peanuts_shelled": 0.0,
-            "suet": 0.0,
-            "cracked_corn": 0.0,
-            "nectar": 0.0,
-            "mealworms": 0.0,
-            "fruit_jelly": 0.0,
+            "nyjer": 1.0, "sunflower_chips": 0.95, "sunflower_black_oil": 0.65, "millet_white": 0.10,
+            "safflower": 0.05, "peanuts_shelled": 0.0, "suet": 0.0, "cracked_corn": 0.0,
+            "nectar": 0.0, "mealworms": 0.0, "fruit_jelly": 0.0,
         },
     },
     {
@@ -414,18 +164,9 @@ FEEDER_SPECIES = [
             "5_northern_forests": {"spring": 0.70, "summer": 0.80, "fall": 0.65, "winter": 0.20},
         },
         "foodPreferences": {
-            "millet_white": 1.0,
-            "cracked_corn": 0.90,
-            "sunflower_chips": 0.85,
-            "sunflower_black_oil": 0.80,
-            "safflower": 0.70,
-            "sunflower_striped": 0.40,
-            "peanuts_shelled": 0.30,
-            "nyjer": 0.20,
-            "suet": 0.0,
-            "nectar": 0.0,
-            "mealworms": 0.0,
-            "fruit_jelly": 0.0,
+            "millet_white": 1.0, "cracked_corn": 0.90, "sunflower_chips": 0.85, "sunflower_black_oil": 0.80,
+            "safflower": 0.70, "sunflower_striped": 0.40, "peanuts_shelled": 0.30, "nyjer": 0.20,
+            "suet": 0.0, "nectar": 0.0, "mealworms": 0.0, "fruit_jelly": 0.0,
         },
     },
     {
@@ -444,18 +185,9 @@ FEEDER_SPECIES = [
             "11_mediterranean_california": {"spring": 0.60, "summer": 0.40, "fall": 0.75, "winter": 0.90},
         },
         "foodPreferences": {
-            "millet_white": 1.0,
-            "sunflower_chips": 0.95,
-            "cracked_corn": 0.75,
-            "sunflower_black_oil": 0.60,
-            "nyjer": 0.40,
-            "peanuts_shelled": 0.30,
-            "safflower": 0.20,
-            "suet": 0.15,
-            "mealworms": 0.15,
-            "sunflower_striped": 0.05,
-            "nectar": 0.0,
-            "fruit_jelly": 0.0,
+            "millet_white": 1.0, "sunflower_chips": 0.95, "cracked_corn": 0.75, "sunflower_black_oil": 0.60,
+            "nyjer": 0.40, "peanuts_shelled": 0.30, "safflower": 0.20, "suet": 0.15,
+            "mealworms": 0.15, "sunflower_striped": 0.05, "nectar": 0.0, "fruit_jelly": 0.0,
         },
     },
     {
@@ -474,18 +206,9 @@ FEEDER_SPECIES = [
             "11_mediterranean_california": {"spring": 0.0, "summer": 0.0, "fall": 0.0, "winter": 0.0},
         },
         "foodPreferences": {
-            "nectar": 1.0,
-            "sunflower_black_oil": 0.0,
-            "sunflower_chips": 0.0,
-            "sunflower_striped": 0.0,
-            "millet_white": 0.0,
-            "nyjer": 0.0,
-            "safflower": 0.0,
-            "peanuts_shelled": 0.0,
-            "suet": 0.0,
-            "cracked_corn": 0.0,
-            "mealworms": 0.0,
-            "fruit_jelly": 0.0,
+            "nectar": 1.0, "sunflower_black_oil": 0.0, "sunflower_chips": 0.0, "sunflower_striped": 0.0,
+            "millet_white": 0.0, "nyjer": 0.0, "safflower": 0.0, "peanuts_shelled": 0.0,
+            "suet": 0.0, "cracked_corn": 0.0, "mealworms": 0.0, "fruit_jelly": 0.0,
         },
     },
     {
@@ -504,17 +227,9 @@ FEEDER_SPECIES = [
             "11_mediterranean_california": {"spring": 0.0, "summer": 0.0, "fall": 0.0, "winter": 0.0},
         },
         "foodPreferences": {
-            "mealworms": 1.0,
-            "suet": 0.75,
-            "sunflower_chips": 0.40,
-            "fruit_jelly": 0.35,
-            "peanuts_shelled": 0.30,
-            "sunflower_black_oil": 0.15,
-            "millet_white": 0.05,
-            "cracked_corn": 0.0,
-            "nyjer": 0.0,
-            "safflower": 0.0,
-            "nectar": 0.0,
+            "mealworms": 1.0, "suet": 0.75, "sunflower_chips": 0.40, "fruit_jelly": 0.35,
+            "peanuts_shelled": 0.30, "sunflower_black_oil": 0.15, "millet_white": 0.05,
+            "cracked_corn": 0.0, "nyjer": 0.0, "safflower": 0.0, "nectar": 0.0,
         },
     },
     {
@@ -533,17 +248,9 @@ FEEDER_SPECIES = [
             "11_mediterranean_california": {"spring": 0.0, "summer": 0.0, "fall": 0.0, "winter": 0.0},
         },
         "foodPreferences": {
-            "fruit_jelly": 1.0,
-            "nectar": 0.90,
-            "mealworms": 0.50,
-            "suet": 0.40,
-            "sunflower_chips": 0.15,
-            "sunflower_black_oil": 0.05,
-            "millet_white": 0.0,
-            "nyjer": 0.0,
-            "cracked_corn": 0.0,
-            "safflower": 0.0,
-            "peanuts_shelled": 0.0,
+            "fruit_jelly": 1.0, "nectar": 0.90, "mealworms": 0.50, "suet": 0.40,
+            "sunflower_chips": 0.15, "sunflower_black_oil": 0.05, "millet_white": 0.0,
+            "nyjer": 0.0, "cracked_corn": 0.0, "safflower": 0.0, "peanuts_shelled": 0.0,
         },
     },
     {
@@ -562,18 +269,9 @@ FEEDER_SPECIES = [
             "11_mediterranean_california": {"spring": 0.05, "summer": 0.0, "fall": 0.05, "winter": 0.05},
         },
         "foodPreferences": {
-            "millet_white": 0.95,
-            "sunflower_chips": 0.90,
-            "sunflower_black_oil": 0.80,
-            "cracked_corn": 0.65,
-            "safflower": 0.40,
-            "nyjer": 0.35,
-            "peanuts_shelled": 0.30,
-            "suet": 0.20,
-            "mealworms": 0.20,
-            "sunflower_striped": 0.15,
-            "nectar": 0.0,
-            "fruit_jelly": 0.0,
+            "millet_white": 0.95, "sunflower_chips": 0.90, "sunflower_black_oil": 0.80, "cracked_corn": 0.65,
+            "safflower": 0.40, "nyjer": 0.35, "peanuts_shelled": 0.30, "suet": 0.20,
+            "mealworms": 0.20, "sunflower_striped": 0.15, "nectar": 0.0, "fruit_jelly": 0.0,
         },
     },
     {
@@ -592,18 +290,9 @@ FEEDER_SPECIES = [
             "5_northern_forests": {"spring": 0.60, "summer": 0.60, "fall": 0.60, "winter": 0.50},
         },
         "foodPreferences": {
-            "sunflower_black_oil": 1.0,
-            "sunflower_chips": 0.95,
-            "nyjer": 0.80,
-            "safflower": 0.70,
-            "millet_white": 0.50,
-            "sunflower_striped": 0.40,
-            "cracked_corn": 0.15,
-            "peanuts_shelled": 0.10,
-            "suet": 0.10,
-            "nectar": 0.0,
-            "mealworms": 0.0,
-            "fruit_jelly": 0.0,
+            "sunflower_black_oil": 1.0, "sunflower_chips": 0.95, "nyjer": 0.80, "safflower": 0.70,
+            "millet_white": 0.50, "sunflower_striped": 0.40, "cracked_corn": 0.15, "peanuts_shelled": 0.10,
+            "suet": 0.10, "nectar": 0.0, "mealworms": 0.0, "fruit_jelly": 0.0,
         },
     },
     {
@@ -622,19 +311,9 @@ FEEDER_SPECIES = [
             "11_mediterranean_california": {"spring": 0.0, "summer": 0.0, "fall": 0.0, "winter": 0.0},
         },
         "foodPreferences": {
-            "suet": 1.0,
-            "peanuts_shelled": 0.95,
-            "peanuts_in_shell": 0.90,
-            "sunflower_black_oil": 0.85,
-            "sunflower_chips": 0.85,
-            "sunflower_striped": 0.70,
-            "mealworms": 0.60,
-            "fruit_jelly": 0.40,
-            "cracked_corn": 0.35,
-            "safflower": 0.30,
-            "millet_white": 0.10,
-            "nyjer": 0.0,
-            "nectar": 0.0,
+            "suet": 1.0, "peanuts_shelled": 0.95, "peanuts_in_shell": 0.90, "sunflower_black_oil": 0.85,
+            "sunflower_chips": 0.85, "sunflower_striped": 0.70, "mealworms": 0.60, "fruit_jelly": 0.40,
+            "cracked_corn": 0.35, "safflower": 0.30, "millet_white": 0.10, "nyjer": 0.0, "nectar": 0.0,
         },
     },
     {
@@ -653,17 +332,9 @@ FEEDER_SPECIES = [
             "11_mediterranean_california": {"spring": 0.0, "summer": 0.0, "fall": 0.0, "winter": 0.0},
         },
         "foodPreferences": {
-            "suet": 0.95,
-            "mealworms": 0.95,
-            "peanuts_shelled": 0.85,
-            "sunflower_chips": 0.75,
-            "sunflower_black_oil": 0.40,
-            "millet_white": 0.15,
-            "cracked_corn": 0.05,
-            "safflower": 0.05,
-            "nyjer": 0.0,
-            "nectar": 0.0,
-            "fruit_jelly": 0.10,
+            "suet": 0.95, "mealworms": 0.95, "peanuts_shelled": 0.85, "sunflower_chips": 0.75,
+            "sunflower_black_oil": 0.40, "millet_white": 0.15, "cracked_corn": 0.05, "safflower": 0.05,
+            "nyjer": 0.0, "nectar": 0.0, "fruit_jelly": 0.10,
         },
     },
     {
@@ -682,18 +353,9 @@ FEEDER_SPECIES = [
             "11_mediterranean_california": {"spring": 0.0, "summer": 0.0, "fall": 0.0, "winter": 0.0},
         },
         "foodPreferences": {
-            "sunflower_black_oil": 1.0,
-            "sunflower_striped": 0.95,
-            "sunflower_chips": 0.90,
-            "safflower": 0.85,
-            "peanuts_shelled": 0.60,
-            "suet": 0.30,
-            "millet_white": 0.20,
-            "mealworms": 0.20,
-            "fruit_jelly": 0.25,
-            "cracked_corn": 0.10,
-            "nyjer": 0.0,
-            "nectar": 0.0,
+            "sunflower_black_oil": 1.0, "sunflower_striped": 0.95, "sunflower_chips": 0.90, "safflower": 0.85,
+            "peanuts_shelled": 0.60, "suet": 0.30, "millet_white": 0.20, "mealworms": 0.20,
+            "fruit_jelly": 0.25, "cracked_corn": 0.10, "nyjer": 0.0, "nectar": 0.0,
         },
     },
     {
@@ -712,110 +374,9 @@ FEEDER_SPECIES = [
             "11_mediterranean_california": {"spring": 0.25, "summer": 0.25, "fall": 0.25, "winter": 0.25},
         },
         "foodPreferences": {
-            "suet": 1.0,
-            "peanuts_shelled": 0.70,
-            "peanuts_in_shell": 0.60,
-            "sunflower_black_oil": 0.30,
-            "sunflower_chips": 0.30,
-            "mealworms": 0.30,
-            "millet_white": 0.0,
-            "cracked_corn": 0.0,
-            "safflower": 0.0,
-            "nyjer": 0.0,
-            "nectar": 0.0,
-            "fruit_jelly": 0.05,
+            "suet": 1.0, "peanuts_shelled": 0.70, "peanuts_in_shell": 0.60, "sunflower_black_oil": 0.30,
+            "sunflower_chips": 0.30, "mealworms": 0.30, "millet_white": 0.0, "cracked_corn": 0.0,
+            "safflower": 0.0, "nyjer": 0.0, "nectar": 0.0, "fruit_jelly": 0.05,
         },
     },
 ]
-
-
-def calculate_feeder_likelihood(
-    foods: List[str],
-    season: Optional[str] = None,
-    month: Optional[int] = None,
-    ecoregion_zone: Optional[str] = None,
-    lat: Optional[float] = None,
-    lon: Optional[float] = None,
-    min_probability: float = 0.02,
-) -> List[Dict[str, Any]]:
-    """
-    Given a feeder's contents, location, and season/date:
-    Computes a sorted likelihood list of birds visiting the feeder.
-    """
-    if not season:
-        m = month or datetime.now().month
-        season = get_season_for_month(m)
-
-    zone = ecoregion_zone or normalize_ecoregion_zone(lat=lat, lon=lon)
-
-    results = []
-
-    # If no foods are specified, return empty
-    if not foods:
-        return []
-
-    for sp in FEEDER_SPECIES:
-        # 1. Regional & seasonal presence probability
-        pres_dict = sp["presence"].get(zone, {})
-        pres_score = pres_dict.get(season, 0.0)
-
-        if pres_score <= 0.0:
-            continue
-
-        # 2. Food affinity score
-        # The bird looks for the food in the feeder that it likes the best
-        pref_map = sp["foodPreferences"]
-        matched_scores = [pref_map.get(f, 0.0) for f in foods]
-        food_score = max(matched_scores) if matched_scores else 0.0
-
-        if food_score <= 0.0:
-            continue
-
-        # 3. Overall visit likelihood probability
-        feeder_propensity = sp.get("feederPropensity", 0.8)
-        probability = pres_score * food_score * feeder_propensity
-
-        if probability < min_probability:
-            continue
-
-        # Likelihood classification tier
-        if probability >= 0.65:
-            tier = "Very Likely"
-            tier_code = "very_likely"
-        elif probability >= 0.40:
-            tier = "Likely"
-            tier_code = "likely"
-        elif probability >= 0.15:
-            tier = "Occasional"
-            tier_code = "occasional"
-        else:
-            tier = "Uncommon / Rare"
-            tier_code = "uncommon"
-
-        # Determine favorite food match in this feeder
-        best_food_id = None
-        best_food_score = -1.0
-        for f in foods:
-            score = pref_map.get(f, 0.0)
-            if score > best_food_score:
-                best_food_score = score
-                best_food_id = f
-
-        best_food_name = FEEDER_FOODS.get(best_food_id, {}).get("name", best_food_id)
-
-        results.append({
-            "id": sp["id"],
-            "commonName": sp["commonName"],
-            "scientificName": sp["scientificName"],
-            "description": sp["description"],
-            "probability": round(probability, 3),
-            "tier": tier,
-            "tierCode": tier_code,
-            "presenceScore": round(pres_score, 2),
-            "foodMatchScore": round(food_score, 2),
-            "primaryTargetFood": best_food_name,
-        })
-
-    # Sort descending by probability
-    results.sort(key=lambda x: x["probability"], reverse=True)
-    return results
