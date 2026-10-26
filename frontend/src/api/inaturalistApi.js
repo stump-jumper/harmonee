@@ -10,6 +10,7 @@ export async function fetchInaturalistObservations({
   taxon = '',
   lat = null,
   lon = null,
+  refresh = false,
 } = {}) {
   const params = new URLSearchParams()
   if (username) params.append('username', username)
@@ -19,6 +20,7 @@ export async function fetchInaturalistObservations({
   if (taxon && taxon !== 'all') params.append('taxon', taxon)
   if (lat != null) params.append('lat', String(lat))
   if (lon != null) params.append('lon', String(lon))
+  if (refresh) params.append('refresh', 'true')
 
   const res = await fetch(`/api/inaturalist/observations?${params.toString()}`)
   if (!res.ok) {

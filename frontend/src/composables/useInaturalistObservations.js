@@ -343,7 +343,7 @@ export function useInaturalistObservations(
     }
   }
 
-  async function loadInaturalistObservations(lat = lastLat, lon = lastLon) {
+  async function loadInaturalistObservations(lat = lastLat, lon = lastLon, { refresh = false } = {}) {
     if (lat != null) lastLat = lat
     if (lon != null) lastLon = lon
     if (lastLat == null || lastLon == null) return
@@ -356,6 +356,7 @@ export function useInaturalistObservations(
         propertyOnly: propertyOnly.value,
         scope: scope.value,
         radiusMiles: 0.5,
+        refresh,
       })
       inaturalistData.value = data
       if (data.observer?.login) {
@@ -369,6 +370,10 @@ export function useInaturalistObservations(
     } finally {
       inaturalistLoading.value = false
     }
+  }
+
+  async function refreshInaturalistObservations() {
+    await loadInaturalistObservations(lastLat, lastLon, { refresh: true })
   }
 
   function focusOnObservation(obs) {
@@ -455,6 +460,7 @@ export function useInaturalistObservations(
     togglePanel,
     renderObservationsOnMap,
     loadInaturalistObservations,
+    refreshInaturalistObservations,
     focusOnObservation,
     setScope,
     setPropertyScope,

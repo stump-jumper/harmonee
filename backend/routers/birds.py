@@ -6,7 +6,7 @@ from fastapi.responses import Response
 
 from backend.schemas import FeederLikelihoodPayload
 from backend.services.birds import fetch_audubon_image_bytes, fetch_bird_photo_bytes
-from backend.services.ebird import get_ebird_sightings_data
+from backend.services.ebird import clear_ebird_cache, get_ebird_sightings_data
 from backend.services.feeder import (
     build_feeder_likelihood_response,
     get_feeder_options_catalog,
@@ -72,8 +72,11 @@ def get_ebird_sightings(
     lon: Optional[float] = None,
     radius_miles: float = 1.0,
     days: int = 30,
+    refresh: bool = False,
 ):
     """Fetch bird sightings within radius_miles and days from eBird."""
+    if refresh:
+        clear_ebird_cache()
     data = read_data()
     prop_lat = lat if lat is not None else data.get("lat")
     prop_lon = lon if lon is not None else data.get("lon")

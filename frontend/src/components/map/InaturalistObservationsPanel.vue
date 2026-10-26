@@ -19,6 +19,7 @@ const emit = defineEmits([
   'update:scope',
   'select-observation',
   'update-username',
+  'refresh',
 ])
 
 const isEditingUser = ref(false)
@@ -83,6 +84,15 @@ function getTaxonCount(taxaId) {
         </div>
       </div>
       <div class="panel-header-actions">
+        <button
+          type="button"
+          class="panel-refresh-btn"
+          title="Refresh iNaturalist observations"
+          :disabled="loading"
+          @click.stop="emit('refresh')"
+        >
+          <span :class="['refresh-icon', { spinning: loading }]">↻</span>
+        </button>
         <span v-if="loading" class="inat-count-badge loading">Loading...</span>
         <span v-else-if="observationsData" class="inat-count-badge">
           {{ observationsData.totalObservations }} records
@@ -320,6 +330,53 @@ function getTaxonCount(taxaId) {
   display: flex;
   align-items: center;
   gap: 0.45rem;
+}
+
+.panel-refresh-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 4px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.85rem;
+  line-height: 1;
+  transition: all 0.15s ease;
+}
+
+.panel-refresh-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.14);
+  color: #4ade80;
+  border-color: rgba(34, 197, 94, 0.45);
+  transform: scale(1.08);
+}
+
+.panel-refresh-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.refresh-icon {
+  display: inline-block;
+  transition: transform 0.2s ease;
+}
+
+.refresh-icon.spinning {
+  animation: refresh-spin 0.8s linear infinite;
+}
+
+@keyframes refresh-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .inat-count-badge {

@@ -2,13 +2,16 @@
  * API client functions for eBird sightings, feeder options, and feeder visitor likelihood.
  */
 
-export async function fetchEbirdSightings({ lat, lon, radiusMiles = 1.0, days = 30 }) {
+export async function fetchEbirdSightings({ lat, lon, radiusMiles = 1.0, days = 30, refresh = false }) {
   const params = new URLSearchParams({
     lat: String(lat),
     lon: String(lon),
     radius_miles: String(radiusMiles),
     days: String(days),
   })
+  if (refresh) {
+    params.set('refresh', 'true')
+  }
   const res = await fetch(`/api/ebird/sightings?${params.toString()}`)
   if (!res.ok) {
     throw new Error(`Failed to load eBird sightings (${res.status})`)

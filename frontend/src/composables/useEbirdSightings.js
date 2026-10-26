@@ -54,6 +54,8 @@ export function useEbirdSightings(
 
   let ebirdMarkers = []
   let currentOpenEbirdPopup = null
+  let lastLat = null
+  let lastLon = null
 
   const currentTopList = computed(() => {
     if (!ebirdSightingsData.value) return []
@@ -197,9 +199,11 @@ export function useEbirdSightings(
 
     const sightings = data.sightings || []
     for (const s of sightings) {
+      if (s.lng == null || s.lat == null) continue
+
       const el = doc.createElement('div')
       el.className = 'ebird-map-marker'
-      el.dataset.sightingId = s.id || ''
+      el.dataset.sightingId = s.id || s.speciesCode
       el.dataset.speciesCode = s.speciesCode || ''
       if (!visible) el.style.display = 'none'
 
@@ -209,7 +213,7 @@ export function useEbirdSightings(
       const pin = doc.createElement('div')
       pin.className = 'ebird-pin'
       pin.innerHTML = '🪶'
-      pin.title = `${s.comName} (${s.distanceMiles} mi)`
+      pin.title = `${s.comName} (${s.distanceMiles} mi away)`
 
       markerBody.appendChild(pin)
       el.appendChild(markerBody)
@@ -261,20 +265,33 @@ export function useEbirdSightings(
     }
   }
 
-  async function loadEbirdSightings(lat, lon) {
-    if (lat == null || lon == null) return
+  async function loadEbirdSightings(lat = lastLat, lon = lastLon, { refresh = false } = {}) {
+    if (lat != null) lastLat = lat
+    if (lon != null) lastLon = lon
+    if (lastLat == null || lastLon == null) return
+
     ebirdLoading.value = true
     try {
-      const data = await fetchEbirdSightings({ lat, lon, radiusMiles: 1.0, days: 30 })
+      const data = await fetchEbirdSightings({
+        lat: lastLat,
+        lon: lastLon,
+        radiusMiles: 1.0,
+        days: 30,
+        refresh,
+      })
       ebirdSightingsData.value = data
       if (mapRef.value) {
-        renderEbirdOnMap(data, lat, lon)
+        renderEbirdOnMap(data, lastLat, lastLon)
       }
     } catch (err) {
       console.error('Failed to load eBird sightings:', err)
     } finally {
       ebirdLoading.value = false
     }
+  }
+
+  async function refreshEbirdSightings() {
+    await loadEbirdSightings(lastLat, lastLon, { refresh: true })
   }
 
   function focusOnSighting(item) {
@@ -364,6 +381,7 @@ export function useEbirdSightings(
     toggleSightingMarker,
     renderEbirdOnMap,
     loadEbirdSightings,
+    refreshEbirdSightings,
     focusOnSighting,
     cleanupEbirdMarkers,
   }

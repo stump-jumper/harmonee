@@ -5,6 +5,7 @@ from fastapi import APIRouter
 
 from backend.schemas import InaturalistUsernamePayload
 from backend.services.inaturalist import (
+    clear_inaturalist_cache,
     get_property_inaturalist_data,
     get_stored_inaturalist_username,
     save_inaturalist_username,
@@ -23,8 +24,12 @@ def get_inaturalist_observations(
     taxon: Optional[str] = None,
     lat: Optional[float] = None,
     lon: Optional[float] = None,
+    refresh: bool = False,
 ):
     """Retrieve iNaturalist observations recorded on or near the property parcel."""
+    if refresh:
+        clear_inaturalist_cache()
+
     data = read_data()
     prop_lat = lat if lat is not None else data.get("lat")
     prop_lon = lon if lon is not None else data.get("lon")

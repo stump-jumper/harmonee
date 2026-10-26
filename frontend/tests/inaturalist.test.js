@@ -138,6 +138,7 @@ test('inaturalistApi query functions build correct endpoints', async () => {
     scope: 'property',
     lat: 40.63,
     lon: -75.55,
+    refresh: true,
   })
   assert.ok(capturedUrl.includes('/api/inaturalist/observations'))
   assert.ok(capturedUrl.includes('username=troxellp'))
@@ -145,6 +146,7 @@ test('inaturalistApi query functions build correct endpoints', async () => {
   assert.ok(capturedUrl.includes('scope=property'))
   assert.ok(capturedUrl.includes('lat=40.63'))
   assert.ok(capturedUrl.includes('lon=-75.55'))
+  assert.ok(capturedUrl.includes('refresh=true'))
 
   // saveInaturalistUsername
   await saveInaturalistUsername('steward42')

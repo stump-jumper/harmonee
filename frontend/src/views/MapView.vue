@@ -138,6 +138,7 @@ const {
   toggleEbirdCard,
   renderEbirdOnMap,
   loadEbirdSightings,
+  refreshEbirdSightings,
   focusOnSighting,
   cleanupEbirdMarkers,
 } = useEbirdSightings(mapRef, {
@@ -159,6 +160,7 @@ const {
   togglePanel: toggleInaturalistPanel,
   renderObservationsOnMap: renderInaturalistOnMap,
   loadInaturalistObservations,
+  refreshInaturalistObservations,
   focusOnObservation: focusOnInatObservation,
   setPropertyScope: setInatPropertyScope,
   setScope: setInatScope,
@@ -455,6 +457,7 @@ onBeforeUnmount(() => {
         @update:scope="setInatScope"
         @select-observation="focusOnInatObservation"
         @update-username="updateInatUsername"
+        @refresh="refreshInaturalistObservations"
       />
 
       <EbirdSightingsPanel
@@ -468,6 +471,7 @@ onBeforeUnmount(() => {
         @toggle-expand="toggleEbirdCard"
         @update:active-tab="ebirdActiveTab = $event"
         @select-sighting="focusOnSighting"
+        @refresh="refreshEbirdSightings"
       />
 
       <EcoregionCard :ecoregions="ecoregions" />
