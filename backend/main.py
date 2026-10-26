@@ -40,6 +40,7 @@ app.add_middleware(
 
 DATA_FILE = Path(__file__).parent / "data.json"
 CACHE_DIR = Path(__file__).parent / ".audubon_cache"
+BIRD_PHOTO_CACHE_DIR = Path(__file__).parent / ".bird_cache"
 MAPBOX_TOKEN = os.getenv("MAPBOX_TOKEN", "")
 EBIRD_API_KEY = os.getenv("EBIRD_API_KEY", "")
 
@@ -711,6 +712,49 @@ def get_audubon_image(species: str = Query(...)):
         return Response(status_code=404)
 
 
+@app.get("/api/birds/photo")
+def get_bird_photo(species: str = Query(...)):
+    """Serve stock photography photo for a bird species from the local bird photo cache or Wikipedia fallback."""
+    BIRD_PHOTO_CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    safe_key = re.sub(r"[^a-zA-Z0-9_-]", "_", species.strip())
+    cache_path = BIRD_PHOTO_CACHE_DIR / f"{safe_key}.jpg"
+
+    if cache_path.exists() and cache_path.stat().st_size > 1000:
+        return Response(
+            content=cache_path.read_bytes(),
+            media_type="image/jpeg",
+            headers={"Cache-Control": "public, max-age=86400"},
+        )
+
+    # If not already cached, attempt to fetch from Wikipedia API
+    try:
+        title = species.strip().replace(" ", "_")
+        url = f"https://en.wikipedia.org/api/rest_v1/page/summary/{title}"
+        req = urllib.request.Request(url, headers={"User-Agent": "HarmoneeApp/1.0 (wildwonder@example.com)"})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            summary = json.loads(resp.read().decode("utf-8"))
+            thumb_url = summary.get("thumbnail", {}).get("source")
+        if thumb_url:
+            img_req = urllib.request.Request(
+                thumb_url,
+                headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"},
+            )
+            with urllib.request.urlopen(img_req, timeout=10) as img_resp:
+                img_data = img_resp.read()
+                if len(img_data) > 1000:
+                    cache_path.write_bytes(img_data)
+                return Response(
+                    content=img_data,
+                    media_type="image/jpeg",
+                    headers={"Cache-Control": "public, max-age=86400"},
+                )
+    except Exception:
+        pass
+
+    # Fallback to Audubon plate if available
+    return get_audubon_image(species=species)
+
+
 # Ecoregion-indexed Keystone Native Plant dataset compiled from:
 # - Dr. Douglas Tallamy & Kimberley Shropshire (Univ. of Delaware / USFS) Lepidoptera Host-Plant Database
 # - National Wildlife Federation (NWF) Keystone Native Plants by Ecoregion
@@ -1217,14 +1261,17 @@ def get_feeder_likelihood(payload: FeederLikelihoodPayload):
         lon=lon,
     )
 
-    # Attach Audubon illustration plate or cache image URL if available
+    # Attach stock photograph and optional Audubon plate
     for v in visitors:
-        sp_match = match_audubon_species(v["scientificName"], v["commonName"])
+        sci = v["scientificName"]
+        # Direct high-res photo endpoint
+        v["imageUrl"] = f"/api/birds/photo?species={urllib.parse.quote(sci)}"
+        sp_match = match_audubon_species(sci, v["commonName"])
         if sp_match:
             v["audubonImage"] = f"/api/birds/audubon-image?species={urllib.parse.quote(sp_match['scientificName'])}"
             v["audubonPlate"] = sp_match.get("plate", "")
         else:
-            v["audubonImage"] = None
+            v["audubonImage"] = v["imageUrl"]
             v["audubonPlate"] = None
 
     return {

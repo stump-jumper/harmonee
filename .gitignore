@@ -17,3 +17,4 @@ Thumbs.db
 .env.local
 backend/data.json
 backend/.audubon_cache/
+backend/.bird_cache/

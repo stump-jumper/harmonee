@@ -274,6 +274,12 @@ const selectedObject = ref(null)
 const isFoodDropdownOpen = ref(false)
 const objectMarkersMap = new Map()
 
+// Feeder Likelihood & Collapsible Details State
+const isEditDetailsCollapsed = ref(true)
+const feederLikelihoodData = ref(null)
+const isFeederLikelihoodLoading = ref(false)
+const feederLikelihoodError = ref(null)
+
 function toggleFoodSelection(foodId) {
   if (!selectedObject.value) return
   if (!Array.isArray(selectedObject.value.foods)) {
@@ -284,6 +290,43 @@ function toggleFoodSelection(foodId) {
     selectedObject.value.foods.push(foodId)
   } else {
     selectedObject.value.foods.splice(idx, 1)
+  }
+  if (selectedObject.value.type === 'bird_feeder') {
+    fetchFeederLikelihood()
+  }
+}
+
+async function fetchFeederLikelihood() {
+  if (!selectedObject.value || selectedObject.value.type !== 'bird_feeder') {
+    feederLikelihoodData.value = null
+    return
+  }
+  const foods = selectedObject.value.foods || []
+  if (!foods.length) {
+    feederLikelihoodData.value = { visitors: [], foods: [] }
+    return
+  }
+  isFeederLikelihoodLoading.value = true
+  feederLikelihoodError.value = null
+  try {
+    const coords = selectedObject.value.coordinates || []
+    const res = await fetch('/api/feeder/likelihood', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        foods,
+        lon: coords[0] || null,
+        lat: coords[1] || null,
+      }),
+    })
+    if (!res.ok) throw new Error(`HTTP error ${res.status}`)
+    const data = await res.json()
+    feederLikelihoodData.value = data
+  } catch (err) {
+    console.error('Failed to fetch feeder likelihood:', err)
+    feederLikelihoodError.value = 'Failed to calculate visitor likelihood.'
+  } finally {
+    isFeederLikelihoodLoading.value = false
   }
 }
 
@@ -1021,6 +1064,14 @@ function renderHabitatObjectMarkers() {
         openObjectDetails(obj)
       })
 
+      el.addEventListener('mouseenter', () => {
+        el.style.zIndex = '100'
+      })
+
+      el.addEventListener('mouseleave', () => {
+        el.style.zIndex = ''
+      })
+
       objectMarkersMap.set(obj.id, marker)
     }
   }
@@ -1065,11 +1116,19 @@ function openObjectDetails(obj) {
       selectedObject.value.type === 'bird_feeder' ? ['sunflower_black_oil'] : []
   }
   isFoodDropdownOpen.value = false
+  // For bird feeders, default edit details to collapsed so user sees bird likelihood list immediately
+  isEditDetailsCollapsed.value = selectedObject.value.type === 'bird_feeder'
+  if (selectedObject.value.type === 'bird_feeder') {
+    fetchFeederLikelihood()
+  } else {
+    feederLikelihoodData.value = null
+  }
 }
 
 function closeObjectDetails() {
   selectedObject.value = null
   isFoodDropdownOpen.value = false
+  feederLikelihoodData.value = null
 }
 
 function saveAndCloseObjectDetails() {
@@ -1082,6 +1141,7 @@ function saveAndCloseObjectDetails() {
   }
   selectedObject.value = null
   isFoodDropdownOpen.value = false
+  feederLikelihoodData.value = null
 }
 
 function changeSelectedObjectType(typeId) {
@@ -1097,6 +1157,11 @@ function changeSelectedObjectType(typeId) {
   }
   if (typeId === 'bird_feeder' && (!selectedObject.value.foods || !selectedObject.value.foods.length)) {
     selectedObject.value.foods = ['sunflower_black_oil']
+  }
+  if (typeId === 'bird_feeder') {
+    fetchFeederLikelihood()
+  } else {
+    feederLikelihoodData.value = null
   }
 }
 
@@ -2074,140 +2139,246 @@ onBeforeUnmount(() => {
         </div>
 
         <div class="modal-body">
-          <!-- Type selector pills -->
-          <div class="form-group">
-            <label class="form-label">Category</label>
-            <div class="type-selector-pills">
-              <button
-                v-for="t in HABITAT_OBJECT_TYPES"
-                :key="t.id"
-                type="button"
-                :class="['type-pill', { active: selectedObject.type === t.id }]"
-                :style="{ '--type-color': t.color }"
-                @click="changeSelectedObjectType(t.id)"
-              >
-                <span class="pill-icon">{{ t.icon }}</span>
-                <span>{{ t.name }}</span>
-              </button>
-            </div>
-          </div>
-
-          <!-- Object Name -->
-          <div class="form-group">
-            <label class="form-label">Name / Label</label>
-            <input
-              v-model="selectedObject.name"
-              type="text"
-              class="form-input"
-              placeholder="e.g. Backyard Tube Feeder"
-            />
-          </div>
-
-          <!-- Feeder Foods Multi-Select Dropdown -->
-          <div v-if="selectedObject.type === 'bird_feeder'" class="form-group food-multiselect-group">
-            <div class="form-label-row">
-              <label class="form-label">Foods in Feeder</label>
-              <span v-if="selectedObject.foods && selectedObject.foods.length" class="selected-count-badge">
-                {{ selectedObject.foods.length }} selected
-              </span>
-            </div>
-
-            <!-- Multi-select trigger & selected chips -->
-            <div
-              class="food-multiselect-box"
-              :class="{ open: isFoodDropdownOpen }"
-              @click="isFoodDropdownOpen = !isFoodDropdownOpen"
-            >
-              <div v-if="selectedObject.foods && selectedObject.foods.length" class="food-chips-wrap">
-                <span
-                  v-for="foodId in selectedObject.foods"
-                  :key="foodId"
-                  class="food-chip-tag"
-                  @click.stop
-                >
-                  <span class="chip-food-icon">{{ getFoodOption(foodId).icon }}</span>
-                  <span class="chip-food-label">{{ getFoodOption(foodId).label }}</span>
-                  <button
-                    type="button"
-                    class="chip-food-remove"
-                    title="Remove food"
-                    @click.stop="toggleFoodSelection(foodId)"
-                  >
-                    ✕
-                  </button>
+          <!-- Bird Feeder Visitors Section (Shown when clicking feeder) -->
+          <div v-if="selectedObject.type === 'bird_feeder'" class="feeder-likelihood-container">
+            <div class="feeder-likelihood-header">
+              <div class="flh-title-row">
+                <span class="flh-badge">🕊 Expected Feeder Visitors</span>
+                <span v-if="feederLikelihoodData?.season" class="flh-season-badge">
+                  {{ feederLikelihoodData.season.toUpperCase() }} SEASON
                 </span>
-                <span class="food-add-more-hint">+ Add / edit foods</span>
               </div>
-              <div v-else class="food-placeholder">
-                <span>Select foods in this feeder (e.g. Sunflower, Suet, Nectar)...</span>
-              </div>
-              <span class="food-dropdown-arrow">{{ isFoodDropdownOpen ? '▴' : '▾' }}</span>
+              <p class="flh-subtitle">
+                Species predicted to visit based on your local ecoregion, current season, and feeder foods:
+              </p>
             </div>
 
-            <!-- Dropdown Menu -->
-            <div v-if="isFoodDropdownOpen" class="food-dropdown-panel" @click.stop>
-              <div class="dropdown-panel-header">
-                <span class="panel-header-title">Select All Applicable Foods</span>
-                <button
-                  v-if="selectedObject.foods && selectedObject.foods.length"
-                  type="button"
-                  class="dropdown-clear-btn"
-                  @click="selectedObject.foods = []"
-                >
-                  Clear all
-                </button>
-              </div>
-
-              <div class="dropdown-options-scroll">
-                <label
-                  v-for="opt in FEEDER_FOOD_OPTIONS"
-                  :key="opt.id"
-                  class="food-checkbox-item"
-                  :class="{ active: selectedObject.foods?.includes(opt.id) }"
-                >
-                  <input
-                    type="checkbox"
-                    :checked="selectedObject.foods?.includes(opt.id)"
-                    @change="toggleFoodSelection(opt.id)"
-                  />
-                  <span class="opt-icon">{{ opt.icon }}</span>
-                  <div class="opt-text-wrap">
-                    <div class="opt-label">{{ opt.label }}</div>
-                    <div class="opt-desc">{{ opt.desc }}</div>
-                  </div>
-                </label>
-              </div>
+            <!-- Loading State -->
+            <div v-if="isFeederLikelihoodLoading" class="feeder-likelihood-loading">
+              <span class="spinner-sm"></span>
+              <span>Calculating local visitor probabilities...</span>
             </div>
-          </div>
 
-          <!-- Non-feeder Style / Variant (for Bird House & Bird Bath) -->
-          <div v-else class="form-group">
-            <label class="form-label">Style / Model</label>
-            <select v-model="selectedObject.variant" class="form-select">
-              <option
-                v-for="v in getObjectTypeDef(selectedObject.type).variants"
-                :key="v"
-                :value="v"
+            <!-- Error State -->
+            <div v-else-if="feederLikelihoodError" class="feeder-likelihood-error">
+              {{ feederLikelihoodError }}
+            </div>
+
+            <!-- Empty Foods State -->
+            <div
+              v-else-if="!selectedObject.foods || !selectedObject.foods.length"
+              class="feeder-likelihood-empty"
+            >
+              <span>🥣 No foods currently selected for this feeder.</span>
+              <p>Expand Feeder Settings below and select foods to see which birds will visit.</p>
+            </div>
+
+            <!-- Visitors List -->
+            <div
+              v-else-if="feederLikelihoodData?.visitors && feederLikelihoodData.visitors.length"
+              class="feeder-visitors-list"
+            >
+              <div
+                v-for="bird in feederLikelihoodData.visitors"
+                :key="bird.id"
+                class="feeder-visitor-card"
               >
-                {{ v }}
-              </option>
-            </select>
+                <div class="visitor-avatar-wrap">
+                  <img
+                    v-if="bird.imageUrl || bird.audubonImage"
+                    :src="bird.imageUrl || bird.audubonImage"
+                    :alt="bird.commonName"
+                    class="visitor-avatar-img"
+                    loading="lazy"
+                  />
+                  <div v-else class="visitor-avatar-placeholder">🐦</div>
+                </div>
+
+                <div class="visitor-info-wrap">
+                  <div class="visitor-headline">
+                    <span class="visitor-name">{{ bird.commonName }}</span>
+                    <span :class="['visitor-tier-pill', bird.tierCode]">
+                      {{ bird.tier }}
+                    </span>
+                  </div>
+                  <div class="visitor-sci-name">{{ bird.scientificName }}</div>
+                  <p class="visitor-desc">{{ bird.description }}</p>
+                  <div class="visitor-meta-row">
+                    <span class="visitor-meta-item">
+                      <strong class="meta-label">Primary Attraction:</strong>
+                      {{ bird.primaryTargetFood }}
+                    </span>
+                    <span class="visitor-meta-item visitor-prob-score">
+                      <strong class="meta-label">Affinity Match:</strong>
+                      {{ Math.round(bird.probability * 100) }}%
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div v-else class="feeder-likelihood-empty">
+              <span>🌾 No strong bird affinities found for the chosen food combination.</span>
+            </div>
           </div>
 
-          <!-- Notes / Specs -->
-          <div class="form-group">
-            <label class="form-label">Notes & Observations</label>
-            <textarea
-              v-model="selectedObject.notes"
-              class="form-textarea"
-              rows="3"
-              placeholder="e.g. Filled with black oil sunflower seeds; cleaned bi-weekly. Attracts Chickadees and Nuthatches."
-            ></textarea>
-          </div>
+          <!-- Collapsible Feeder / Object Details Section -->
+          <div class="collapsible-details-section">
+            <button
+              type="button"
+              class="collapsible-toggle-bar"
+              :class="{ open: !isEditDetailsCollapsed }"
+              @click="isEditDetailsCollapsed = !isEditDetailsCollapsed"
+            >
+              <div class="toggle-left">
+                <span class="toggle-icon">⚙️</span>
+                <span class="toggle-title">
+                  {{ selectedObject.type === 'bird_feeder' ? 'Feeder Settings & Foods' : 'Object Settings' }}
+                </span>
+                <span v-if="isEditDetailsCollapsed && selectedObject.type === 'bird_feeder' && selectedObject.foods?.length" class="toggle-summary-badge">
+                  {{ selectedObject.foods.length }} food{{ selectedObject.foods.length > 1 ? 's' : '' }} configured
+                </span>
+              </div>
+              <span class="toggle-arrow">{{ isEditDetailsCollapsed ? '▾' : '▴' }}</span>
+            </button>
 
-          <div class="location-hint">
-            <span class="hint-icon">💡</span>
-            <span>Tip: Drag the pin on the map anytime to reposition it.</span>
+            <div v-show="!isEditDetailsCollapsed" class="collapsible-content-body">
+              <!-- Type selector pills -->
+              <div class="form-group">
+                <label class="form-label">Category</label>
+                <div class="type-selector-pills">
+                  <button
+                    v-for="t in HABITAT_OBJECT_TYPES"
+                    :key="t.id"
+                    type="button"
+                    :class="['type-pill', { active: selectedObject.type === t.id }]"
+                    :style="{ '--type-color': t.color }"
+                    @click="changeSelectedObjectType(t.id)"
+                  >
+                    <span class="pill-icon">{{ t.icon }}</span>
+                    <span>{{ t.name }}</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Object Name -->
+              <div class="form-group">
+                <label class="form-label">Name / Label</label>
+                <input
+                  v-model="selectedObject.name"
+                  type="text"
+                  class="form-input"
+                  placeholder="e.g. Backyard Tube Feeder"
+                />
+              </div>
+
+              <!-- Feeder Foods Multi-Select Dropdown -->
+              <div v-if="selectedObject.type === 'bird_feeder'" class="form-group food-multiselect-group">
+                <div class="form-label-row">
+                  <label class="form-label">Foods in Feeder</label>
+                  <span v-if="selectedObject.foods && selectedObject.foods.length" class="selected-count-badge">
+                    {{ selectedObject.foods.length }} selected
+                  </span>
+                </div>
+
+                <!-- Multi-select trigger & selected chips -->
+                <div
+                  class="food-multiselect-box"
+                  :class="{ open: isFoodDropdownOpen }"
+                  @click="isFoodDropdownOpen = !isFoodDropdownOpen"
+                >
+                  <div v-if="selectedObject.foods && selectedObject.foods.length" class="food-chips-wrap">
+                    <span
+                      v-for="foodId in selectedObject.foods"
+                      :key="foodId"
+                      class="food-chip-tag"
+                      @click.stop
+                    >
+                      <span class="chip-food-icon">{{ getFoodOption(foodId).icon }}</span>
+                      <span class="chip-food-label">{{ getFoodOption(foodId).label }}</span>
+                      <button
+                        type="button"
+                        class="chip-food-remove"
+                        title="Remove food"
+                        @click.stop="toggleFoodSelection(foodId)"
+                      >
+                        ✕
+                      </button>
+                    </span>
+                    <span class="food-add-more-hint">+ Add / edit foods</span>
+                  </div>
+                  <div v-else class="food-placeholder">
+                    <span>Select foods in this feeder (e.g. Sunflower, Suet, Nectar)...</span>
+                  </div>
+                  <span class="food-dropdown-arrow">{{ isFoodDropdownOpen ? '▴' : '▾' }}</span>
+                </div>
+
+                <!-- Dropdown Menu -->
+                <div v-if="isFoodDropdownOpen" class="food-dropdown-panel" @click.stop>
+                  <div class="dropdown-panel-header">
+                    <span class="panel-header-title">Select All Applicable Foods</span>
+                    <button
+                      v-if="selectedObject.foods && selectedObject.foods.length"
+                      type="button"
+                      class="dropdown-clear-btn"
+                      @click="selectedObject.foods = []; fetchFeederLikelihood()"
+                    >
+                      Clear all
+                    </button>
+                  </div>
+
+                  <div class="dropdown-options-scroll">
+                    <label
+                      v-for="opt in FEEDER_FOOD_OPTIONS"
+                      :key="opt.id"
+                      class="food-checkbox-item"
+                      :class="{ active: selectedObject.foods?.includes(opt.id) }"
+                    >
+                      <input
+                        type="checkbox"
+                        :checked="selectedObject.foods?.includes(opt.id)"
+                        @change="toggleFoodSelection(opt.id)"
+                      />
+                      <span class="opt-icon">{{ opt.icon }}</span>
+                      <div class="opt-text-wrap">
+                        <div class="opt-label">{{ opt.label }}</div>
+                        <div class="opt-desc">{{ opt.desc }}</div>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Non-feeder Style / Variant (for Bird House & Bird Bath) -->
+              <div v-else class="form-group">
+                <label class="form-label">Style / Model</label>
+                <select v-model="selectedObject.variant" class="form-select">
+                  <option
+                    v-for="v in getObjectTypeDef(selectedObject.type).variants"
+                    :key="v"
+                    :value="v"
+                  >
+                    {{ v }}
+                  </option>
+                </select>
+              </div>
+
+              <!-- Notes / Specs -->
+              <div class="form-group">
+                <label class="form-label">Notes & Observations</label>
+                <textarea
+                  v-model="selectedObject.notes"
+                  class="form-textarea"
+                  rows="3"
+                  placeholder="e.g. Filled with black oil sunflower seeds; cleaned bi-weekly. Attracts Chickadees and Nuthatches."
+                ></textarea>
+              </div>
+
+              <div class="location-hint">
+                <span class="hint-icon">💡</span>
+                <span>Tip: Drag the pin on the map anytime to reposition it.</span>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -3246,8 +3417,9 @@ onBeforeUnmount(() => {
   border: 1px solid var(--border-sage);
   border-radius: 10px;
   box-shadow: 0 16px 36px rgba(0, 0, 0, 0.65), 0 0 20px rgba(82, 183, 136, 0.15);
-  max-width: 480px;
+  max-width: 560px;
   width: 100%;
+  max-height: 85vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -3669,6 +3841,306 @@ onBeforeUnmount(() => {
   background-color: #1b4332;
   border-color: #74c69d;
 }
+
+/* Feeder Likelihood Section Styles */
+.feeder-likelihood-container {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(82, 183, 136, 0.25);
+  border-radius: 8px;
+  padding: 0.85rem;
+}
+
+.feeder-likelihood-header {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.flh-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.flh-badge {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #74c69d;
+  letter-spacing: 0.02em;
+}
+
+.flh-season-badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: #fbbf24;
+  background: rgba(245, 158, 11, 0.18);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  padding: 0.15rem 0.45rem;
+  border-radius: 4px;
+  letter-spacing: 0.05em;
+}
+
+.flh-subtitle {
+  font-size: 0.73rem;
+  color: var(--text-muted);
+  line-height: 1.35;
+  margin: 0;
+}
+
+.feeder-likelihood-loading {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.75rem;
+  color: #94a3af;
+  padding: 1rem 0.5rem;
+  justify-content: center;
+}
+
+.feeder-likelihood-error {
+  font-size: 0.75rem;
+  color: #f87171;
+  background: rgba(239, 68, 68, 0.1);
+  padding: 0.5rem 0.75rem;
+  border-radius: 6px;
+}
+
+.feeder-likelihood-empty {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px dashed rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  padding: 0.85rem;
+  text-align: center;
+  line-height: 1.4;
+}
+
+.feeder-likelihood-empty p {
+  margin: 0.3rem 0 0;
+  font-size: 0.7rem;
+  color: #64748b;
+}
+
+.feeder-visitors-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  max-height: 310px;
+  overflow-y: auto;
+  padding-right: 0.2rem;
+}
+
+.feeder-visitor-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+  padding: 0.65rem;
+  background: rgba(18, 33, 26, 0.85);
+  border: 1px solid rgba(82, 183, 136, 0.2);
+  border-radius: 6px;
+  transition: all 0.15s ease;
+}
+
+.feeder-visitor-card:hover {
+  background: rgba(24, 46, 35, 0.95);
+  border-color: rgba(82, 183, 136, 0.45);
+  transform: translateY(-1px);
+}
+
+.visitor-avatar-wrap {
+  width: 52px;
+  height: 52px;
+  flex-shrink: 0;
+  border-radius: 6px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.visitor-avatar-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.visitor-avatar-placeholder {
+  font-size: 1.5rem;
+}
+
+.visitor-info-wrap {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.visitor-headline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+}
+
+.visitor-name {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: #f1f5f9;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.visitor-tier-pill {
+  font-size: 0.62rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+  white-space: nowrap;
+}
+
+.visitor-tier-pill.very_likely {
+  background: rgba(34, 197, 94, 0.2);
+  color: #4ade80;
+  border: 1px solid rgba(34, 197, 94, 0.4);
+}
+
+.visitor-tier-pill.likely {
+  background: rgba(59, 130, 246, 0.2);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.4);
+}
+
+.visitor-tier-pill.occasional {
+  background: rgba(245, 158, 11, 0.2);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+}
+
+.visitor-tier-pill.uncommon {
+  background: rgba(148, 163, 184, 0.2);
+  color: #94a3af;
+  border: 1px solid rgba(148, 163, 184, 0.3);
+}
+
+.visitor-sci-name {
+  font-size: 0.67rem;
+  font-style: italic;
+  color: var(--text-muted);
+}
+
+.visitor-desc {
+  font-size: 0.69rem;
+  color: #cbd5e1;
+  line-height: 1.3;
+  margin: 0.15rem 0;
+}
+
+.visitor-meta-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  font-size: 0.67rem;
+  color: #94a3af;
+  margin-top: 0.2rem;
+  padding-top: 0.25rem;
+  border-top: 1px dashed rgba(255, 255, 255, 0.08);
+}
+
+.meta-label {
+  color: #6ee7b7;
+  font-weight: 600;
+}
+
+.visitor-prob-score {
+  font-weight: 700;
+  color: #e2e8f0;
+}
+
+/* Collapsible Object / Feeder Details Section */
+.collapsible-details-section {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+.collapsible-toggle-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 0.65rem 0.85rem;
+  background: rgba(0, 0, 0, 0.25);
+  border: none;
+  color: var(--text-cream);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  transition: background-color 0.15s ease;
+  user-select: none;
+}
+
+.collapsible-toggle-bar:hover,
+.collapsible-toggle-bar.open {
+  background: rgba(82, 183, 136, 0.12);
+  color: #fff;
+}
+
+.toggle-left {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.toggle-icon {
+  font-size: 0.95rem;
+}
+
+.toggle-title {
+  letter-spacing: 0.02em;
+}
+
+.toggle-summary-badge {
+  font-size: 0.65rem;
+  font-weight: 600;
+  color: #fbbf24;
+  background: rgba(245, 158, 11, 0.18);
+  border: 1px solid rgba(245, 158, 11, 0.35);
+  padding: 0.08rem 0.45rem;
+  border-radius: 999px;
+}
+
+.toggle-arrow {
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.collapsible-content-body {
+  padding: 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.15);
+}
 </style>
 
 <!-- Global Mapbox Marker Styles -->
@@ -3680,6 +4152,10 @@ onBeforeUnmount(() => {
   z-index: 2;
   /* Crucial: NO CSS transition or transform overrides on this root marker element.
      Mapbox GL manages style.transform synchronously on every animation frame during pan/zoom. */
+}
+
+.habitat-object-marker:hover {
+  z-index: 100 !important;
 }
 
 .habitat-object-marker:active {
@@ -3695,9 +4171,8 @@ onBeforeUnmount(() => {
 }
 
 .habitat-object-marker:hover .marker-body {
-  transform: scale(1.15) translateY(-3px);
-  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.45));
-  z-index: 5;
+  transform: scale(1.18) translateY(-4px);
+  filter: drop-shadow(0 6px 14px rgba(0, 0, 0, 0.65));
 }
 
 .habitat-object-marker .marker-pin {
