@@ -16,6 +16,13 @@ const mapElement = ref(null)
 const errorMessage = ref('')
 let mapInstance = null
 
+// eBird Sightings State
+const ebirdSightingsData = ref(null)
+const ebirdLoading = ref(false)
+const ebirdActiveTab = ref('recent') // 'recent' | 'closest' | 'common'
+const selectedSightingId = ref(null)
+let ebirdMarkers = []
+
 const token = import.meta.env.VITE_MAPBOX_TOKEN
 
 function computeRingAreaSqMeters(ring) {
@@ -99,7 +106,184 @@ const layers = ref([
     color: '#f2cc8f',
     mapLayerIds: ['parcel-boundary-fill', 'parcel-boundary-outline'],
   },
+  {
+    id: 'habitat-objects-layer',
+    name: 'Habitat Objects',
+    type: 'overlay',
+    visible: true,
+    toggleable: true,
+    color: '#f59e0b',
+    mapLayerIds: [],
+  },
+  {
+    id: 'ebird-sightings-layer',
+    name: 'eBird Sightings (0.5 mi)',
+    type: 'overlay',
+    visible: true,
+    toggleable: true,
+    color: '#38bdf8',
+    mapLayerIds: ['ebird-radius-fill', 'ebird-radius-outline'],
+  },
 ])
+
+const HABITAT_OBJECT_TYPES = [
+  {
+    id: 'bird_feeder',
+    name: 'Bird Feeder',
+    icon: '🥣',
+    color: '#f59e0b',
+    description: 'Supplemental food source for seed, suet, or nectar eating birds',
+    defaultVariant: 'Tube / Seed Feeder',
+    variants: [
+      'Tube / Seed Feeder',
+      'Suet Cage Feeder',
+      'Hummingbird / Nectar Feeder',
+      'Hopper Feeder',
+      'Platform / Tray Feeder',
+      'Thistle / Finch Feeder',
+    ],
+  },
+  {
+    id: 'bird_house',
+    name: 'Bird House / Nest Box',
+    icon: '🏠',
+    color: '#0284c7',
+    description: 'Sheltered nesting site for cavity-nesting birds',
+    defaultVariant: 'Bluebird Nest Box',
+    variants: [
+      'Bluebird Nest Box',
+      'Chickadee / Titmouse Box',
+      'Wren Box',
+      'Screech Owl / Kestrel Box',
+      'Swallow Box',
+      'Custom Nest Box',
+    ],
+  },
+  {
+    id: 'bird_bath',
+    name: 'Bird Bath / Water Basin',
+    icon: '💧',
+    color: '#06b6d4',
+    description: 'Fresh clean water source for drinking, preening, and bathing',
+    defaultVariant: 'Pedestal Bird Bath',
+    variants: [
+      'Pedestal Bird Bath',
+      'Ground Water Basin',
+      'Dripper / Mister Feature',
+      'Solar Fountain Bird Bath',
+      'Heated Winter Bird Bath',
+    ],
+  },
+]
+
+function getObjectTypeDef(typeId) {
+  return HABITAT_OBJECT_TYPES.find((t) => t.id === typeId) || HABITAT_OBJECT_TYPES[0]
+}
+
+const FEEDER_FOOD_OPTIONS = [
+  {
+    id: 'sunflower_black_oil',
+    label: 'Black-Oil Sunflower Seed',
+    icon: '🌻',
+    desc: 'High oil & fat content; top favorite of cardinals, chickadees, finches, and nuthatches',
+  },
+  {
+    id: 'sunflower_striped',
+    label: 'Striped Sunflower Seed',
+    icon: '🌻',
+    desc: 'Thicker hull; great for grosbeaks, blue jays, and woodpeckers',
+  },
+  {
+    id: 'sunflower_chips',
+    label: 'Sunflower Hearts / Chips (No Shell)',
+    icon: '🌻',
+    desc: 'No-waste, 100% edible energy accessible to both small and large songbirds',
+  },
+  {
+    id: 'nyjer',
+    label: 'Nyjer / Thistle Seed',
+    icon: '🌾',
+    desc: 'Tiny oil-rich seeds favorite of American goldfinches, siskins, and redpolls',
+  },
+  {
+    id: 'suet',
+    label: 'Suet / Suet Cakes',
+    icon: '🥩',
+    desc: 'Rendered calorie-dense fat cakes; loved by woodpeckers, nuthatches, and wrens',
+  },
+  {
+    id: 'nectar',
+    label: 'Sugar Water / Nectar',
+    icon: '🌺',
+    desc: 'Boiled 4:1 water-to-sugar nectar for hummingbirds and orioles',
+  },
+  {
+    id: 'peanuts_shelled',
+    label: 'Peanuts (Shelled / Halves)',
+    icon: '🥜',
+    desc: 'High-fat protein nuts; beloved by jays, titmice, nuthatches, and woodpeckers',
+  },
+  {
+    id: 'peanuts_in_shell',
+    label: 'Peanuts in Shell',
+    icon: '🥜',
+    desc: 'Whole in-shell nuts; entertaining for jays, crows, and red-bellied woodpeckers',
+  },
+  {
+    id: 'safflower',
+    label: 'Safflower Seed',
+    icon: '🌱',
+    desc: 'Bitter-tasting white seed squirrels and blackbirds dislike; eaten by cardinals and chickadees',
+  },
+  {
+    id: 'mealworms',
+    label: 'Mealworms (Dried or Live)',
+    icon: '🐛',
+    desc: 'High-protein insect treat for bluebirds, wrens, robins, and kinglets',
+  },
+  {
+    id: 'fruit_jelly',
+    label: 'Fruit (Oranges/Apples) & Grape Jelly',
+    icon: '🍊',
+    desc: 'Sweet nectar substitutes for Baltimore orioles, catbirds, and tanagers',
+  },
+  {
+    id: 'millet_white',
+    label: 'White Proso Millet',
+    icon: '🌾',
+    desc: 'Favorite ground-feeding seed for juncos, native sparrows, and mourning doves',
+  },
+  {
+    id: 'cracked_corn',
+    label: 'Cracked Corn',
+    icon: '🌽',
+    desc: 'Hearty grain for mourning doves, towhees, and native ground sparrows',
+  },
+]
+
+function getFoodOption(id) {
+  return FEEDER_FOOD_OPTIONS.find((f) => f.id === id) || { id, label: id, icon: '🥣', desc: '' }
+}
+
+const habitatObjects = ref([])
+const isObjectPlacementMode = ref(false)
+const activeObjectType = ref('bird_feeder')
+const selectedObject = ref(null)
+const isFoodDropdownOpen = ref(false)
+const objectMarkersMap = new Map()
+
+function toggleFoodSelection(foodId) {
+  if (!selectedObject.value) return
+  if (!Array.isArray(selectedObject.value.foods)) {
+    selectedObject.value.foods = []
+  }
+  const idx = selectedObject.value.foods.indexOf(foodId)
+  if (idx === -1) {
+    selectedObject.value.foods.push(foodId)
+  } else {
+    selectedObject.value.foods.splice(idx, 1)
+  }
+}
 
 const BRUSH_CLASSES = [
   { id: 'tree_canopy', name: 'Tree Canopy', color: '#15803d', icon: '🌳' },
@@ -140,7 +324,7 @@ watch(brushSizeMeters, () => {
 })
 
 function handleMapMouseMove(e) {
-  if (!isPaintMode.value) return
+  if (!isPaintMode.value && !isObjectPlacementMode.value) return
   isMouseOnMap.value = true
   const rect = mapElement.value?.getBoundingClientRect()
   if (rect) {
@@ -247,6 +431,9 @@ function onMapMouseUp() {
 }
 
 function togglePaintMode() {
+  if (!isPaintMode.value && isObjectPlacementMode.value) {
+    toggleObjectPlacementMode()
+  }
   isPaintMode.value = !isPaintMode.value
   if (!mapInstance) return
 
@@ -264,6 +451,22 @@ function togglePaintMode() {
     isMouseOnMap.value = false
   }
   updatePaintStrokesSource()
+}
+
+function toggleObjectPlacementMode() {
+  if (!isObjectPlacementMode.value && isPaintMode.value) {
+    togglePaintMode()
+  }
+  isObjectPlacementMode.value = !isObjectPlacementMode.value
+  if (!mapInstance) return
+
+  const canvas = mapInstance.getCanvas()
+  if (canvas) {
+    canvas.style.cursor = isObjectPlacementMode.value ? 'crosshair' : ''
+  }
+  if (!isObjectPlacementMode.value) {
+    isMouseOnMap.value = false
+  }
 }
 
 function undoStroke() {
@@ -314,12 +517,458 @@ function toggleLayer(layer) {
   layer.visible = !layer.visible
   if (!mapInstance) return
 
+  if (layer.id === 'habitat-objects-layer') {
+    updateHabitatObjectMarkersVisibility()
+    return
+  }
+
+  if (layer.id === 'ebird-sightings-layer') {
+    updateEbirdMarkersVisibility()
+  }
+
   const visibility = layer.visible ? 'visible' : 'none'
   for (const mapLayerId of layer.mapLayerIds) {
     if (mapInstance.getLayer(mapLayerId)) {
       mapInstance.setLayoutProperty(mapLayerId, 'visibility', visibility)
     }
   }
+}
+
+function updateHabitatObjectMarkersVisibility() {
+  const layerConfig = layers.value.find((l) => l.id === 'habitat-objects-layer')
+  const visible = layerConfig ? layerConfig.visible : true
+  for (const [, marker] of objectMarkersMap) {
+    const el = marker.getElement()
+    if (el) {
+      el.style.display = visible ? '' : 'none'
+    }
+  }
+}
+
+function updateEbirdMarkersVisibility() {
+  const layerConfig = layers.value.find((l) => l.id === 'ebird-sightings-layer')
+  const visible = layerConfig ? layerConfig.visible : true
+  for (const marker of ebirdMarkers) {
+    const el = marker.getElement()
+    if (el) {
+      el.style.display = visible ? '' : 'none'
+    }
+  }
+}
+
+function escapeHtml(str) {
+  if (!str) return ''
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;')
+}
+
+function formatSightingDate(dtStr) {
+  if (!dtStr) return ''
+  try {
+    const d = new Date(dtStr.replace(' ', 'T'))
+    if (isNaN(d.getTime())) return dtStr
+    const now = new Date()
+    const diffMs = now.getTime() - d.getTime()
+    const diffHrs = Math.floor(diffMs / (1000 * 60 * 60))
+    if (diffHrs < 1) return 'Just now'
+    if (diffHrs < 24) return `${diffHrs}h ago`
+    const diffDays = Math.floor(diffHrs / 24)
+    if (diffDays === 1) return 'Yesterday'
+    if (diffDays < 7) return `${diffDays}d ago`
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  } catch {
+    return dtStr
+  }
+}
+
+const currentTopList = computed(() => {
+  if (!ebirdSightingsData.value) return []
+  if (ebirdActiveTab.value === 'recent') {
+    return ebirdSightingsData.value.topRecent || []
+  } else if (ebirdActiveTab.value === 'closest') {
+    return ebirdSightingsData.value.topClosest || []
+  } else {
+    return ebirdSightingsData.value.topCommon || []
+  }
+})
+
+function createGeoJSONCircle(center, radiusInMiles, points = 64) {
+  const km = radiusInMiles * 1.609344
+  const coords = []
+  const distanceX = km / (111.32 * Math.cos((center[1] * Math.PI) / 180))
+  const distanceY = km / 110.574
+
+  for (let i = 0; i < points; i++) {
+    const theta = (i / points) * (2 * Math.PI)
+    const x = distanceX * Math.cos(theta)
+    const y = distanceY * Math.sin(theta)
+    coords.push([center[0] + x, center[1] + y])
+  }
+  coords.push(coords[0])
+
+  return {
+    type: 'Feature',
+    geometry: {
+      type: 'Polygon',
+      coordinates: [coords],
+    },
+    properties: {
+      radiusMiles: radiusInMiles,
+    },
+  }
+}
+
+function renderEbirdOnMap(data, centerLat, centerLon) {
+  if (!mapInstance || !data) return
+
+  for (const m of ebirdMarkers) {
+    m.remove()
+  }
+  ebirdMarkers = []
+
+  const circleFeature = createGeoJSONCircle([centerLon, centerLat], 0.5)
+  const srcId = 'ebird-radius-source'
+  const fillId = 'ebird-radius-fill'
+  const outlineId = 'ebird-radius-outline'
+
+  const layerConfig = layers.value.find((l) => l.id === 'ebird-sightings-layer')
+  const isVisible = layerConfig ? layerConfig.visible : true
+  const visibility = isVisible ? 'visible' : 'none'
+
+  if (mapInstance.getSource(srcId)) {
+    mapInstance.getSource(srcId).setData(circleFeature)
+  } else {
+    mapInstance.addSource(srcId, {
+      type: 'geojson',
+      data: circleFeature,
+    })
+    const beforeId = mapInstance.getLayer('user-paint-strokes-lines')
+      ? 'user-paint-strokes-lines'
+      : undefined
+    mapInstance.addLayer(
+      {
+        id: fillId,
+        type: 'fill',
+        source: srcId,
+        layout: { visibility },
+        paint: {
+          'fill-color': '#0284c7',
+          'fill-opacity': 0.05,
+        },
+      },
+      beforeId
+    )
+    mapInstance.addLayer(
+      {
+        id: outlineId,
+        type: 'line',
+        source: srcId,
+        layout: {
+          visibility,
+          'line-cap': 'round',
+          'line-join': 'round',
+        },
+        paint: {
+          'line-color': '#38bdf8',
+          'line-width': 1.5,
+          'line-dasharray': [3, 2],
+          'line-opacity': 0.7,
+        },
+      },
+      beforeId
+    )
+  }
+
+  const sightings = data.sightings || []
+  for (const s of sightings) {
+    const el = document.createElement('div')
+    el.className = 'ebird-map-marker'
+    el.dataset.sightingId = s.id || s.speciesCode
+    if (!isVisible) el.style.display = 'none'
+
+    const pin = document.createElement('div')
+    pin.className = 'ebird-pin'
+    pin.innerHTML = '🪶'
+    pin.title = `${s.comName} (${s.distanceMiles} mi)`
+    el.appendChild(pin)
+
+    const popupHtml = `
+      <div class="ebird-popup-content">
+        <div class="popup-bird-header">
+          <div class="popup-bird-name">${escapeHtml(s.comName)}</div>
+          <div class="popup-bird-sci">${escapeHtml(s.sciName)}</div>
+        </div>
+        <div class="popup-bird-details">
+          <div class="popup-tag-row">
+            <span class="popup-tag dist-badge">📍 ${s.distanceMiles} mi away</span>
+            <span class="popup-tag count-badge">🪶 ${s.howMany ? s.howMany + ' seen' : 'Present'}</span>
+          </div>
+          <div class="popup-time">🕒 ${escapeHtml(formatSightingDate(s.obsDt))} (${escapeHtml(s.obsDt)})</div>
+          <div class="popup-loc">🏡 ${escapeHtml(s.locName || 'Nearby sighting')}</div>
+          ${s.subId ? `<div class="popup-sub"><a href="https://ebird.org/checklist/${escapeHtml(s.subId)}" target="_blank" rel="noopener noreferrer">eBird Checklist #${escapeHtml(s.subId)} ↗</a></div>` : ''}
+        </div>
+      </div>
+    `
+
+    const popup = new mapboxgl.Popup({
+      offset: 16,
+      closeButton: true,
+      className: 'ebird-mapbox-popup',
+    }).setHTML(popupHtml)
+
+    const marker = new mapboxgl.Marker({
+      element: el,
+      anchor: 'center',
+    })
+      .setLngLat([s.lng, s.lat])
+      .setPopup(popup)
+      .addTo(mapInstance)
+
+    el.addEventListener('click', (e) => {
+      e.stopPropagation()
+      selectedSightingId.value = s.id || s.speciesCode
+    })
+
+    ebirdMarkers.push(marker)
+  }
+}
+
+async function loadEbirdSightings(lat, lon) {
+  if (lat == null || lon == null) return
+  ebirdLoading.value = true
+  try {
+    const res = await fetch(`/api/ebird/sightings?lat=${lat}&lon=${lon}&radius_miles=0.5&days=30`)
+    if (res.ok) {
+      const data = await res.json()
+      ebirdSightingsData.value = data
+      if (mapInstance && (mapInstance.isStyleLoaded() || mapInstance.loaded())) {
+        renderEbirdOnMap(data, lat, lon)
+      }
+    }
+  } catch (err) {
+    console.error('Failed to load eBird sightings:', err)
+  } finally {
+    ebirdLoading.value = false
+  }
+}
+
+function focusOnSighting(item) {
+  if (!item || !mapInstance) return
+  const sId = item.id || item.speciesCode
+  selectedSightingId.value = sId
+
+  const layerConfig = layers.value.find((l) => l.id === 'ebird-sightings-layer')
+  if (layerConfig && !layerConfig.visible) {
+    layerConfig.visible = true
+    updateEbirdMarkersVisibility()
+    if (mapInstance.getLayer('ebird-radius-fill')) {
+      mapInstance.setLayoutProperty('ebird-radius-fill', 'visibility', 'visible')
+      mapInstance.setLayoutProperty('ebird-radius-outline', 'visibility', 'visible')
+    }
+  }
+
+  mapInstance.flyTo({
+    center: [item.lng, item.lat],
+    zoom: Math.max(mapInstance.getZoom(), 17),
+    speed: 1.2,
+    essential: true,
+  })
+
+  const targetMarker = ebirdMarkers.find(
+    (m) => m.getElement()?.dataset.sightingId === sId
+  )
+  if (targetMarker) {
+    const popup = targetMarker.getPopup()
+    if (popup && !popup.isOpen()) {
+      targetMarker.togglePopup()
+    }
+  }
+}
+
+function renderHabitatObjectMarkers() {
+  if (!mapInstance) return
+
+  const activeIds = new Set(habitatObjects.value.map((o) => o.id))
+  for (const [id, marker] of objectMarkersMap) {
+    if (!activeIds.has(id)) {
+      marker.remove()
+      objectMarkersMap.delete(id)
+    }
+  }
+
+  const layerConfig = layers.value.find((l) => l.id === 'habitat-objects-layer')
+  const isLayerVisible = layerConfig ? layerConfig.visible : true
+
+  for (const obj of habitatObjects.value) {
+    const typeDef = getObjectTypeDef(obj.type)
+    let marker = objectMarkersMap.get(obj.id)
+
+    if (marker) {
+      marker.setLngLat(obj.coordinates)
+      const el = marker.getElement()
+      if (el) {
+        el.style.display = isLayerVisible ? '' : 'none'
+        const pin = el.querySelector('.marker-pin')
+        if (pin) pin.style.setProperty('--marker-color', typeDef.color)
+        const iconSpan = el.querySelector('.marker-icon')
+        if (iconSpan) iconSpan.textContent = typeDef.icon
+        const label = el.querySelector('.marker-label')
+        if (label) label.textContent = obj.name || typeDef.name
+        const subInfo =
+          obj.type === 'bird_feeder' && obj.foods && obj.foods.length
+            ? obj.foods.map((f) => getFoodOption(f).label).join(', ')
+            : obj.variant || ''
+        el.setAttribute('title', `${obj.name}${subInfo ? ` (${subInfo})` : ''}`)
+      }
+    } else {
+      const el = document.createElement('div')
+      el.className = 'habitat-object-marker'
+      el.setAttribute('data-id', obj.id)
+      const subInfo =
+        obj.type === 'bird_feeder' && obj.foods && obj.foods.length
+          ? obj.foods.map((f) => getFoodOption(f).label).join(', ')
+          : obj.variant || ''
+      el.setAttribute('title', `${obj.name}${subInfo ? ` (${subInfo})` : ''}`)
+      if (!isLayerVisible) el.style.display = 'none'
+
+      const pin = document.createElement('div')
+      pin.className = 'marker-pin'
+      pin.style.setProperty('--marker-color', typeDef.color)
+
+      const iconSpan = document.createElement('span')
+      iconSpan.className = 'marker-icon'
+      iconSpan.textContent = typeDef.icon
+      pin.appendChild(iconSpan)
+
+      const label = document.createElement('div')
+      label.className = 'marker-label'
+      label.textContent = obj.name || typeDef.name
+
+      const body = document.createElement('div')
+      body.className = 'marker-body'
+      body.appendChild(pin)
+      body.appendChild(label)
+
+      el.appendChild(body)
+
+      marker = new mapboxgl.Marker({
+        element: el,
+        draggable: true,
+        anchor: 'bottom',
+      })
+        .setLngLat(obj.coordinates)
+        .addTo(mapInstance)
+
+      marker.on('dragend', () => {
+        const lngLat = marker.getLngLat()
+        obj.coordinates = [lngLat.lng, lngLat.lat]
+        saveHabitatObjects()
+      })
+
+      el.addEventListener('click', (e) => {
+        e.stopPropagation()
+        openObjectDetails(obj)
+      })
+
+      objectMarkersMap.set(obj.id, marker)
+    }
+  }
+}
+
+async function saveHabitatObjects() {
+  try {
+    await fetch('/api/habitat-objects', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ objects: habitatObjects.value }),
+    })
+  } catch (err) {
+    console.error('Failed to save habitat objects:', err)
+  }
+}
+
+function onMapClick(e) {
+  if (!isObjectPlacementMode.value) return
+  const coords = [e.lngLat.lng, e.lngLat.lat]
+  const typeDef = getObjectTypeDef(activeObjectType.value)
+  const newObj = {
+    id: `obj-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    type: typeDef.id,
+    name: typeDef.name,
+    foods: typeDef.id === 'bird_feeder' ? ['sunflower_black_oil'] : [],
+    variant: typeDef.defaultVariant,
+    notes: '',
+    coordinates: coords,
+    dateAdded: new Date().toISOString().slice(0, 10),
+  }
+  habitatObjects.value.push(newObj)
+  renderHabitatObjectMarkers()
+  saveHabitatObjects()
+  openObjectDetails(newObj)
+}
+
+function openObjectDetails(obj) {
+  selectedObject.value = JSON.parse(JSON.stringify(obj))
+  if (!Array.isArray(selectedObject.value.foods)) {
+    selectedObject.value.foods =
+      selectedObject.value.type === 'bird_feeder' ? ['sunflower_black_oil'] : []
+  }
+  isFoodDropdownOpen.value = false
+}
+
+function closeObjectDetails() {
+  selectedObject.value = null
+  isFoodDropdownOpen.value = false
+}
+
+function saveAndCloseObjectDetails() {
+  if (!selectedObject.value) return
+  const idx = habitatObjects.value.findIndex((o) => o.id === selectedObject.value.id)
+  if (idx !== -1) {
+    habitatObjects.value[idx] = { ...selectedObject.value }
+    renderHabitatObjectMarkers()
+    saveHabitatObjects()
+  }
+  selectedObject.value = null
+  isFoodDropdownOpen.value = false
+}
+
+function changeSelectedObjectType(typeId) {
+  if (!selectedObject.value) return
+  const prevTypeDef = getObjectTypeDef(selectedObject.value.type)
+  const newTypeDef = getObjectTypeDef(typeId)
+  selectedObject.value.type = typeId
+  if (!selectedObject.value.name || selectedObject.value.name === prevTypeDef.name) {
+    selectedObject.value.name = newTypeDef.name
+  }
+  if (!newTypeDef.variants.includes(selectedObject.value.variant)) {
+    selectedObject.value.variant = newTypeDef.defaultVariant
+  }
+  if (typeId === 'bird_feeder' && (!selectedObject.value.foods || !selectedObject.value.foods.length)) {
+    selectedObject.value.foods = ['sunflower_black_oil']
+  }
+}
+
+function deleteObject(obj) {
+  if (!obj) return
+  habitatObjects.value = habitatObjects.value.filter((o) => o.id !== obj.id)
+  renderHabitatObjectMarkers()
+  saveHabitatObjects()
+  selectedObject.value = null
+}
+
+function focusOnObject(obj) {
+  if (!mapInstance || !obj.coordinates) return
+  mapInstance.flyTo({
+    center: obj.coordinates,
+    zoom: Math.max(mapInstance.getZoom(), 19),
+    duration: 800,
+  })
+  openObjectDetails(obj)
 }
 
 function registerHabitatLayers(segData) {
@@ -445,8 +1094,16 @@ async function refreshCaptureDate(lat, lon) {
 }
 
 function handleKeydown(e) {
-  if (e.key === 'Escape' && showBirdModal.value) {
-    showBirdModal.value = false
+  if (e.key === 'Escape') {
+    if (selectedObject.value) {
+      closeObjectDetails()
+    } else if (isObjectPlacementMode.value) {
+      toggleObjectPlacementMode()
+    } else if (isPaintMode.value) {
+      togglePaintMode()
+    } else if (showBirdModal.value) {
+      showBirdModal.value = false
+    }
   }
 }
 
@@ -470,6 +1127,9 @@ onMounted(async () => {
       habitatSegmentation.value = data.habitatSegmentation || null
       if (Array.isArray(data.paintStrokes) && data.paintStrokes.length > 0) {
         strokes.value = data.paintStrokes
+      }
+      if (Array.isArray(data.habitatObjects) && data.habitatObjects.length > 0) {
+        habitatObjects.value = data.habitatObjects
       }
       if (data.habitatSegmentation) {
         registerHabitatLayers(data.habitatSegmentation)
@@ -615,6 +1275,9 @@ onMounted(async () => {
     if (habitatSegmentation.value) {
       registerHabitatLayers(habitatSegmentation.value)
     }
+    if (habitatObjects.value.length > 0) {
+      renderHabitatObjectMarkers()
+    }
     if (rawParcel) {
       const bounds = getParcelBounds(rawParcel)
       if (bounds) {
@@ -630,6 +1293,7 @@ onMounted(async () => {
     }
   })
 
+  mapInstance.on('click', onMapClick)
   mapInstance.on('mousedown', onMapMouseDown)
   mapInstance.on('mousemove', onMapMouseMove)
   mapInstance.on('mouseup', onMapMouseUp)
@@ -650,6 +1314,10 @@ onMounted(async () => {
 
 onBeforeUnmount(() => {
   window.removeEventListener('keydown', handleKeydown)
+  for (const [, marker] of objectMarkersMap) {
+    marker.remove()
+  }
+  objectMarkersMap.clear()
   if (mapInstance) {
     mapInstance.remove()
     mapInstance = null
@@ -841,6 +1509,9 @@ onBeforeUnmount(() => {
               ></span>
               <span class="layer-name">{{ layer.name }}</span>
               <span v-if="!layer.toggleable" class="layer-tag">Base</span>
+              <span v-else-if="layer.id === 'habitat-objects-layer'" class="layer-tag count-tag">
+                {{ habitatObjects.length }}
+              </span>
               <span v-else-if="layer.percentage != null" class="layer-tag">
                 {{ layer.percentage }}%
               </span>
@@ -878,6 +1549,70 @@ onBeforeUnmount(() => {
             <span v-else-if="strokes.length">🚀 Segment from Paint</span>
             <span v-else>Paint seeds to segment</span>
           </button>
+        </div>
+
+        <!-- Habitat Objects Section -->
+        <div v-if="parcelFeature" class="habitat-objects-section">
+          <div class="section-divider"></div>
+          <div class="objects-section-header">
+            <div class="section-title-wrap">
+              <span class="section-title">Habitat Features</span>
+              <span class="objects-count-badge">{{ habitatObjects.length }}</span>
+            </div>
+            <button
+              type="button"
+              :class="['add-object-btn', { active: isObjectPlacementMode }]"
+              @click="toggleObjectPlacementMode"
+            >
+              <span class="btn-icon">{{ isObjectPlacementMode ? '✕' : '📍' }}</span>
+              <span>{{ isObjectPlacementMode ? 'Cancel' : 'Add Object' }}</span>
+            </button>
+          </div>
+
+          <!-- Placed Objects List -->
+          <div v-if="habitatObjects.length > 0" class="placed-objects-list">
+            <div
+              v-for="obj in habitatObjects"
+              :key="obj.id"
+              class="placed-object-card"
+              @click="focusOnObject(obj)"
+            >
+              <div
+                class="obj-card-icon"
+                :style="{
+                  backgroundColor: `${getObjectTypeDef(obj.type).color}25`,
+                  borderColor: getObjectTypeDef(obj.type).color,
+                }"
+              >
+                {{ getObjectTypeDef(obj.type).icon }}
+              </div>
+              <div class="obj-card-info">
+                <div class="obj-card-title">{{ obj.name }}</div>
+                <div class="obj-card-variant">
+                  <template v-if="obj.type === 'bird_feeder' && obj.foods && obj.foods.length">
+                    {{ obj.foods.map((f) => getFoodOption(f).label).join(', ') }}
+                  </template>
+                  <template v-else-if="obj.type === 'bird_feeder'">
+                    No food specified
+                  </template>
+                  <template v-else>
+                    {{ getObjectTypeDef(obj.type).name }}
+                  </template>
+                </div>
+              </div>
+              <button
+                type="button"
+                class="obj-card-delete-btn"
+                title="Delete object"
+                @click.stop="deleteObject(obj)"
+              >
+                🗑
+              </button>
+            </div>
+          </div>
+          <div v-else class="empty-objects-hint">
+            Place bird feeders, nest boxes, or water baths on your map.
+          </div>
         </div>
       </div>
     </div>
@@ -965,6 +1700,49 @@ onBeforeUnmount(() => {
       </div>
     </div>
 
+    <!-- Floating Habitat Object Placement Toolbar -->
+    <div v-if="isObjectPlacementMode" class="object-floating-toolbar">
+      <div class="toolbar-header">
+        <div class="toolbar-title-wrap">
+          <span class="toolbar-icon">📍</span>
+          <span class="toolbar-title">Place Habitat Object</span>
+        </div>
+        <span class="toolbar-hint">
+          Click map to place a {{ getObjectTypeDef(activeObjectType).name }}
+        </span>
+        <button
+          type="button"
+          class="toolbar-close-btn"
+          title="Exit Placement Mode"
+          @click="toggleObjectPlacementMode"
+        >
+          ✕
+        </button>
+      </div>
+
+      <div class="toolbar-palette">
+        <button
+          v-for="t in HABITAT_OBJECT_TYPES"
+          :key="t.id"
+          type="button"
+          :class="['palette-chip', { active: activeObjectType === t.id }]"
+          :style="{ '--chip-color': t.color }"
+          @click="activeObjectType = t.id"
+        >
+          <span class="chip-swatch" :style="{ backgroundColor: t.color }"></span>
+          <span class="chip-icon">{{ t.icon }}</span>
+          <span class="chip-name">{{ t.name }}</span>
+        </button>
+      </div>
+
+      <div class="toolbar-footer">
+        <span class="placement-subtext">Click map to place • Drag pin to relocate</span>
+        <button type="button" class="action-btn-primary" @click="toggleObjectPlacementMode">
+          Done Placing
+        </button>
+      </div>
+    </div>
+
     <div v-if="errorMessage" class="map-empty">
       <p>{{ errorMessage }}</p>
     </div>
@@ -985,6 +1763,182 @@ onBeforeUnmount(() => {
     >
       <span class="reticle-center-dot" :style="{ backgroundColor: activeBrushColor }"></span>
       <span class="reticle-size-pill">{{ brushSizeMeters }}m</span>
+    </div>
+
+    <!-- Real-time Object Placement Cursor -->
+    <div
+      v-if="isObjectPlacementMode && isMouseOnMap"
+      class="object-placement-cursor"
+      :style="{
+        left: `${cursorPos.x}px`,
+        top: `${cursorPos.y}px`,
+        '--cursor-color': getObjectTypeDef(activeObjectType).color,
+      }"
+    >
+      <div class="cursor-pin">
+        <span class="cursor-icon">{{ getObjectTypeDef(activeObjectType).icon }}</span>
+      </div>
+      <div class="cursor-label">Click to place</div>
+    </div>
+
+    <!-- Object Edit & Details Modal -->
+    <div v-if="selectedObject" class="object-modal-overlay" @click.self="closeObjectDetails">
+      <div class="object-modal-card">
+        <div class="modal-header">
+          <div class="modal-title-wrap">
+            <span class="modal-type-icon">{{ getObjectTypeDef(selectedObject.type).icon }}</span>
+            <h3>{{ selectedObject.name || 'Habitat Object' }}</h3>
+          </div>
+          <button class="modal-close-btn" @click="closeObjectDetails">✕</button>
+        </div>
+
+        <div class="modal-body">
+          <!-- Type selector pills -->
+          <div class="form-group">
+            <label class="form-label">Category</label>
+            <div class="type-selector-pills">
+              <button
+                v-for="t in HABITAT_OBJECT_TYPES"
+                :key="t.id"
+                type="button"
+                :class="['type-pill', { active: selectedObject.type === t.id }]"
+                :style="{ '--type-color': t.color }"
+                @click="changeSelectedObjectType(t.id)"
+              >
+                <span class="pill-icon">{{ t.icon }}</span>
+                <span>{{ t.name }}</span>
+              </button>
+            </div>
+          </div>
+
+          <!-- Object Name -->
+          <div class="form-group">
+            <label class="form-label">Name / Label</label>
+            <input
+              v-model="selectedObject.name"
+              type="text"
+              class="form-input"
+              placeholder="e.g. Backyard Tube Feeder"
+            />
+          </div>
+
+          <!-- Feeder Foods Multi-Select Dropdown -->
+          <div v-if="selectedObject.type === 'bird_feeder'" class="form-group food-multiselect-group">
+            <div class="form-label-row">
+              <label class="form-label">Foods in Feeder</label>
+              <span v-if="selectedObject.foods && selectedObject.foods.length" class="selected-count-badge">
+                {{ selectedObject.foods.length }} selected
+              </span>
+            </div>
+
+            <!-- Multi-select trigger & selected chips -->
+            <div
+              class="food-multiselect-box"
+              :class="{ open: isFoodDropdownOpen }"
+              @click="isFoodDropdownOpen = !isFoodDropdownOpen"
+            >
+              <div v-if="selectedObject.foods && selectedObject.foods.length" class="food-chips-wrap">
+                <span
+                  v-for="foodId in selectedObject.foods"
+                  :key="foodId"
+                  class="food-chip-tag"
+                  @click.stop
+                >
+                  <span class="chip-food-icon">{{ getFoodOption(foodId).icon }}</span>
+                  <span class="chip-food-label">{{ getFoodOption(foodId).label }}</span>
+                  <button
+                    type="button"
+                    class="chip-food-remove"
+                    title="Remove food"
+                    @click.stop="toggleFoodSelection(foodId)"
+                  >
+                    ✕
+                  </button>
+                </span>
+                <span class="food-add-more-hint">+ Add / edit foods</span>
+              </div>
+              <div v-else class="food-placeholder">
+                <span>Select foods in this feeder (e.g. Sunflower, Suet, Nectar)...</span>
+              </div>
+              <span class="food-dropdown-arrow">{{ isFoodDropdownOpen ? '▴' : '▾' }}</span>
+            </div>
+
+            <!-- Dropdown Menu -->
+            <div v-if="isFoodDropdownOpen" class="food-dropdown-panel" @click.stop>
+              <div class="dropdown-panel-header">
+                <span class="panel-header-title">Select All Applicable Foods</span>
+                <button
+                  v-if="selectedObject.foods && selectedObject.foods.length"
+                  type="button"
+                  class="dropdown-clear-btn"
+                  @click="selectedObject.foods = []"
+                >
+                  Clear all
+                </button>
+              </div>
+
+              <div class="dropdown-options-scroll">
+                <label
+                  v-for="opt in FEEDER_FOOD_OPTIONS"
+                  :key="opt.id"
+                  class="food-checkbox-item"
+                  :class="{ active: selectedObject.foods?.includes(opt.id) }"
+                >
+                  <input
+                    type="checkbox"
+                    :checked="selectedObject.foods?.includes(opt.id)"
+                    @change="toggleFoodSelection(opt.id)"
+                  />
+                  <span class="opt-icon">{{ opt.icon }}</span>
+                  <div class="opt-text-wrap">
+                    <div class="opt-label">{{ opt.label }}</div>
+                    <div class="opt-desc">{{ opt.desc }}</div>
+                  </div>
+                </label>
+              </div>
+            </div>
+          </div>
+
+          <!-- Non-feeder Style / Variant (for Bird House & Bird Bath) -->
+          <div v-else class="form-group">
+            <label class="form-label">Style / Model</label>
+            <select v-model="selectedObject.variant" class="form-select">
+              <option
+                v-for="v in getObjectTypeDef(selectedObject.type).variants"
+                :key="v"
+                :value="v"
+              >
+                {{ v }}
+              </option>
+            </select>
+          </div>
+
+          <!-- Notes / Specs -->
+          <div class="form-group">
+            <label class="form-label">Notes & Observations</label>
+            <textarea
+              v-model="selectedObject.notes"
+              class="form-textarea"
+              rows="3"
+              placeholder="e.g. Filled with black oil sunflower seeds; cleaned bi-weekly. Attracts Chickadees and Nuthatches."
+            ></textarea>
+          </div>
+
+          <div class="location-hint">
+            <span class="hint-icon">💡</span>
+            <span>Tip: Drag the pin on the map anytime to reposition it.</span>
+          </div>
+        </div>
+
+        <div class="modal-footer">
+          <button type="button" class="btn-danger" @click="deleteObject(selectedObject)">
+            🗑 Delete Object
+          </button>
+          <button type="button" class="btn-primary" @click="saveAndCloseObjectDetails">
+            ✓ Save & Close
+          </button>
+        </div>
+      </div>
     </div>
 
     <div v-if="captureDate && !errorMessage" class="capture-date">
@@ -1763,5 +2717,740 @@ onBeforeUnmount(() => {
   white-space: nowrap;
   pointer-events: none;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+
+/* Layer Count Tag */
+.count-tag {
+  background-color: rgba(245, 158, 11, 0.2) !important;
+  color: #fcd34d !important;
+  border: 1px solid rgba(245, 158, 11, 0.4) !important;
+  font-weight: 700 !important;
+}
+
+/* Habitat Objects Sidebar Section */
+.habitat-objects-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.objects-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.section-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.section-title {
+  font-size: 0.8rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-cream);
+}
+
+.objects-count-badge {
+  background-color: rgba(245, 158, 11, 0.2);
+  color: #fcd34d;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  font-size: 0.7rem;
+  font-weight: 700;
+  padding: 0 0.4rem;
+  border-radius: 999px;
+  line-height: 1.25;
+}
+
+.add-object-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.3rem 0.65rem;
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: #fcd34d;
+  background-color: rgba(245, 158, 11, 0.15);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.add-object-btn:hover {
+  background-color: rgba(245, 158, 11, 0.28);
+  border-color: #f59e0b;
+}
+
+.add-object-btn.active {
+  background-color: #f59e0b;
+  color: #1f1b0a;
+  border-color: #f59e0b;
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.4);
+}
+
+.placed-objects-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  max-height: 220px;
+  overflow-y: auto;
+  padding-right: 0.2rem;
+}
+
+.placed-object-card {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.45rem 0.6rem;
+  background-color: rgba(0, 0, 0, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.placed-object-card:hover {
+  background-color: rgba(255, 255, 255, 0.08);
+  border-color: rgba(245, 158, 11, 0.5);
+}
+
+.obj-card-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.95rem;
+  flex-shrink: 0;
+}
+
+.obj-card-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.obj-card-title {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-cream);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.obj-card-variant {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.obj-card-delete-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  cursor: pointer;
+  padding: 0.2rem 0.3rem;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+}
+
+.obj-card-delete-btn:hover {
+  color: #f87171;
+  background-color: rgba(239, 68, 68, 0.15);
+}
+
+.empty-objects-hint {
+  font-size: 0.73rem;
+  color: var(--text-muted);
+  font-style: italic;
+  padding: 0.2rem 0;
+  line-height: 1.4;
+}
+
+/* Floating Habitat Object Placement Toolbar */
+.object-floating-toolbar {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  padding: 0.75rem 1rem;
+  background-color: rgba(20, 36, 29, 0.94);
+  backdrop-filter: blur(12px);
+  border: 1px solid #f59e0b;
+  border-radius: 8px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45), 0 0 16px rgba(245, 158, 11, 0.25);
+  max-width: 580px;
+  width: calc(100% - 28px);
+}
+
+.placement-subtext {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+/* Real-time Object Placement Cursor Preview */
+.object-placement-cursor {
+  position: absolute;
+  pointer-events: none;
+  transform: translate(-50%, -100%);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  will-change: left, top;
+}
+
+.cursor-pin {
+  width: 32px;
+  height: 32px;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  background-color: var(--cursor-color, #f59e0b);
+  border: 2px solid #ffffff;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5), 0 0 12px var(--cursor-color, #f59e0b);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.cursor-icon {
+  transform: rotate(45deg);
+  font-size: 15px;
+}
+
+.cursor-label {
+  background-color: rgba(18, 32, 25, 0.92);
+  color: #e8f5e9;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 8px;
+  padding: 0 6px;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+}
+
+/* Object Edit & Details Modal */
+.object-modal-overlay {
+  position: absolute;
+  inset: 0;
+  background-color: rgba(0, 0, 0, 0.65);
+  backdrop-filter: blur(4px);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.object-modal-card {
+  background-color: #14241d;
+  border: 1px solid var(--border-sage);
+  border-radius: 10px;
+  box-shadow: 0 16px 36px rgba(0, 0, 0, 0.65), 0 0 20px rgba(82, 183, 136, 0.15);
+  max-width: 480px;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: modalFadeIn 0.18s ease-out;
+}
+
+@keyframes modalFadeIn {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.9rem 1.2rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background-color: rgba(0, 0, 0, 0.2);
+}
+
+.modal-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.modal-type-icon {
+  font-size: 1.3rem;
+}
+
+.modal-title-wrap h3 {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #e8f5e9;
+  margin: 0;
+}
+
+.modal-close-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 0.2rem 0.4rem;
+  border-radius: 4px;
+}
+
+.modal-close-btn:hover {
+  color: #fff;
+  background-color: rgba(255, 255, 255, 0.1);
+}
+
+.modal-body {
+  padding: 1.1rem 1.2rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.9rem;
+  overflow-y: auto;
+  max-height: 70vh;
+}
+
+.form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+/* Feeder Foods Multi-Select Component */
+.food-multiselect-group {
+  position: relative;
+}
+
+.form-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.selected-count-badge {
+  font-size: 0.68rem;
+  font-weight: 700;
+  color: #fcd34d;
+  background-color: rgba(245, 158, 11, 0.2);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+}
+
+.food-multiselect-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  min-height: 42px;
+  padding: 0.4rem 0.65rem;
+  background-color: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border-sage);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.food-multiselect-box:hover,
+.food-multiselect-box.open {
+  border-color: #52b788;
+  background-color: rgba(0, 0, 0, 0.45);
+}
+
+.food-multiselect-box.open {
+  box-shadow: 0 0 0 2px rgba(82, 183, 136, 0.25);
+}
+
+.food-chips-wrap {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 1;
+}
+
+.food-chip-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.2rem 0.45rem;
+  background-color: rgba(245, 158, 11, 0.18);
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #fef3c7;
+}
+
+.chip-food-icon {
+  font-size: 0.85rem;
+}
+
+.chip-food-remove {
+  background: none;
+  border: none;
+  color: #fcd34d;
+  font-size: 0.75rem;
+  cursor: pointer;
+  padding: 0 0.15rem;
+  line-height: 1;
+  border-radius: 2px;
+  transition: all 0.12s ease;
+}
+
+.chip-food-remove:hover {
+  color: #ef4444;
+  background-color: rgba(239, 68, 68, 0.2);
+}
+
+.food-add-more-hint {
+  font-size: 0.72rem;
+  color: #52b788;
+  font-weight: 600;
+  padding: 0.1rem 0.2rem;
+}
+
+.food-placeholder {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+  flex: 1;
+}
+
+.food-dropdown-arrow {
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  padding-left: 0.3rem;
+}
+
+.food-dropdown-panel {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 120;
+  background-color: #12211a;
+  border: 1px solid #52b788;
+  border-radius: 8px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.7), 0 0 16px rgba(82, 183, 136, 0.2);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: dropdownFadeIn 0.15s ease-out;
+}
+
+@keyframes dropdownFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.dropdown-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.45rem 0.75rem;
+  background-color: rgba(0, 0, 0, 0.35);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.panel-header-title {
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.dropdown-clear-btn {
+  background: none;
+  border: none;
+  font-size: 0.7rem;
+  color: #f87171;
+  cursor: pointer;
+  padding: 0.1rem 0.3rem;
+  border-radius: 3px;
+}
+
+.dropdown-clear-btn:hover {
+  background-color: rgba(239, 68, 68, 0.15);
+}
+
+.dropdown-options-scroll {
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 0.3rem 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.food-checkbox-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  padding: 0.45rem 0.75rem;
+  cursor: pointer;
+  transition: background-color 0.12s ease;
+  user-select: none;
+}
+
+.food-checkbox-item:hover {
+  background-color: rgba(255, 255, 255, 0.06);
+}
+
+.food-checkbox-item.active {
+  background-color: rgba(245, 158, 11, 0.12);
+}
+
+.food-checkbox-item input[type='checkbox'] {
+  margin-top: 3px;
+  accent-color: #f59e0b;
+  cursor: pointer;
+}
+
+.opt-icon {
+  font-size: 1.05rem;
+  line-height: 1.2;
+}
+
+.opt-text-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.opt-label {
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #f1f5f9;
+}
+
+.opt-desc {
+  font-size: 0.67rem;
+  color: var(--text-muted);
+  line-height: 1.3;
+}
+
+.form-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--text-cream);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.type-selector-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.type-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.65rem;
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text-cream);
+  background-color: rgba(0, 0, 0, 0.35);
+  border: 1.5px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.type-pill:hover {
+  border-color: var(--type-color);
+  background-color: rgba(0, 0, 0, 0.55);
+}
+
+.type-pill.active {
+  border-color: var(--type-color);
+  background-color: rgba(255, 255, 255, 0.12);
+  color: #fff;
+  box-shadow: 0 0 10px var(--type-color);
+}
+
+.form-input,
+.form-select,
+.form-textarea {
+  width: 100%;
+  padding: 0.45rem 0.65rem;
+  background-color: rgba(0, 0, 0, 0.35);
+  border: 1px solid var(--border-sage);
+  border-radius: 6px;
+  color: #f1f5f9;
+  font-size: 0.82rem;
+  outline: none;
+  font-family: inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.form-input:focus,
+.form-select:focus,
+.form-textarea:focus {
+  border-color: #52b788;
+  box-shadow: 0 0 0 2px rgba(82, 183, 136, 0.25);
+}
+
+.form-textarea {
+  resize: vertical;
+  min-height: 60px;
+}
+
+.location-hint {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.4rem;
+  padding: 0.5rem 0.7rem;
+  background-color: rgba(245, 158, 11, 0.08);
+  border: 1px solid rgba(245, 158, 11, 0.25);
+  border-radius: 6px;
+  font-size: 0.72rem;
+  color: #fef3c7;
+  line-height: 1.4;
+}
+
+.hint-icon {
+  font-size: 0.85rem;
+}
+
+.modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem 1.2rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  background-color: rgba(0, 0, 0, 0.2);
+}
+
+.btn-danger {
+  padding: 0.4rem 0.75rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: #f87171;
+  background-color: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.35);
+  border-radius: 5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-danger:hover {
+  background-color: #ef4444;
+  color: #fff;
+}
+
+.btn-primary {
+  padding: 0.4rem 0.95rem;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: #fff;
+  background-color: #2d6a4f;
+  border: 1px solid #52b788;
+  border-radius: 5px;
+  cursor: pointer;
+  box-shadow: 0 0 10px rgba(82, 183, 136, 0.3);
+  transition: all 0.15s ease;
+}
+
+.btn-primary:hover {
+  background-color: #1b4332;
+  border-color: #74c69d;
+}
+</style>
+
+<!-- Global Mapbox Marker Styles -->
+<style>
+.habitat-object-marker {
+  cursor: grab;
+  user-select: none;
+  will-change: transform;
+  z-index: 5;
+  /* Crucial: NO CSS transition or transform overrides on this root marker element.
+     Mapbox GL manages style.transform synchronously on every animation frame during pan/zoom. */
+}
+
+.habitat-object-marker:active {
+  cursor: grabbing;
+}
+
+.habitat-object-marker .marker-body {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  transition: transform 0.15s ease, filter 0.15s ease;
+  pointer-events: auto;
+}
+
+.habitat-object-marker:hover .marker-body {
+  transform: scale(1.15) translateY(-3px);
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.45));
+  z-index: 25;
+}
+
+.habitat-object-marker .marker-pin {
+  width: 32px;
+  height: 32px;
+  border-radius: 50% 50% 50% 0;
+  transform: rotate(-45deg);
+  background-color: var(--marker-color, #f59e0b);
+  border: 2px solid #ffffff;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5), 0 0 10px var(--marker-color, #f59e0b);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+
+.habitat-object-marker .marker-icon {
+  transform: rotate(45deg);
+  font-size: 15px;
+  line-height: 1;
+}
+
+.habitat-object-marker .marker-label {
+  margin-top: 3px;
+  background-color: rgba(18, 32, 25, 0.92);
+  color: #f1f5f9;
+  font-size: 10px;
+  font-weight: 600;
+  padding: 1px 6px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.5);
+  max-width: 120px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  pointer-events: none;
 }
 </style>
