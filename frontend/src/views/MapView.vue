@@ -778,11 +778,25 @@ function renderEbirdOnMap(data, centerLat, centerLon) {
     markerBody.appendChild(pin)
     el.appendChild(markerBody)
 
+    const imgUrl = `/api/birds/photo?species=${encodeURIComponent(s.sciName || s.comName)}`
+
     const popupHtml = `
       <div class="ebird-popup-content">
-        <div class="popup-bird-header">
-          <div class="popup-bird-name">${escapeHtml(s.comName)}</div>
-          <div class="popup-bird-sci">${escapeHtml(s.sciName)}</div>
+        <div class="popup-bird-top-row">
+          <div class="popup-bird-thumb-wrap">
+            <img
+              src="${imgUrl}"
+              alt="${escapeHtml(s.comName)}"
+              class="popup-bird-thumb"
+              loading="lazy"
+              onerror="this.style.display='none'; if(this.nextElementSibling) this.nextElementSibling.style.display='flex';"
+            />
+            <div class="popup-bird-thumb-fallback" style="display: none;">🪶</div>
+          </div>
+          <div class="popup-bird-header">
+            <div class="popup-bird-name">${escapeHtml(s.comName)}</div>
+            <div class="popup-bird-sci">${escapeHtml(s.sciName)}</div>
+          </div>
         </div>
         <div class="popup-bird-details">
           <div class="popup-tag-row">
