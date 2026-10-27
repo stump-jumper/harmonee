@@ -1,5 +1,5 @@
 /**
- * API client functions for property address, geocoding autocomplete, and aerial imagery metadata.
+ * API client functions for property address, geocoding autocomplete, aerial imagery metadata, and soil survey.
  */
 
 export async function fetchPropertyData() {
@@ -46,6 +46,14 @@ export async function fetchSupportedCounties() {
   const res = await fetch('/api/supported-counties')
   if (!res.ok) {
     throw new Error(`Failed to fetch supported counties (${res.status})`)
+  }
+  return res.json()
+}
+
+export async function fetchSoilSurvey() {
+  const res = await fetch('/api/soil-survey')
+  if (!res.ok) {
+    throw new Error(`Failed to fetch soil survey (${res.status})`)
   }
   return res.json()
 }

@@ -1,4 +1,4 @@
-"""Unit tests for all 14 FastAPI router endpoints and request schemas."""
+"""Unit tests for FastAPI router endpoints and request schemas."""
 
 import unittest
 from unittest.mock import patch
@@ -140,6 +140,20 @@ class TestRouters(unittest.TestCase):
         mock_fetch.return_value = None
         res = birds.get_bird_photo(species="UnknownBird")
         self.assertEqual(res.status_code, 404)
+
+    @patch("backend.routers.property.read_data")
+    def test_19_soil_survey_cached(self, mock_read):
+        mock_read.return_value = {
+            "soilSurvey": {
+                "summary": [{"musym": "DbB", "muname": "Duffield silt loam", "percentage": 100.0}],
+                "geojson": {"type": "FeatureCollection", "features": []},
+                "labelsGeojson": {"type": "FeatureCollection", "features": []},
+            }
+        }
+        res = property.get_soil_survey()
+        self.assertIn("summary", res)
+        self.assertEqual(len(res["summary"]), 1)
+        self.assertEqual(res["summary"][0]["musym"], "DbB")
 
 
 if __name__ == "__main__":

@@ -9,6 +9,7 @@ from backend.services.ecology import lookup_ecoregions, lookup_keystone_plants
 from backend.services.geocoding import lookup_suggestions
 from backend.services.gis import lookup_capture_date, lookup_parcel_boundary
 from backend.services.segmentation import segment_parcel_habitats
+from backend.services.soil import lookup_soil_survey
 from backend.storage import read_data, write_data
 
 
@@ -83,6 +84,15 @@ def get_enriched_property_data() -> dict:
             data["habitatSegmentation"] = habitat_segmentation
             dirty = True
 
+    soil_survey = data.get("soilSurvey")
+    if (parcel or (lat is not None and lon is not None)) and (
+        not isinstance(soil_survey, dict) or not soil_survey.get("summary")
+    ):
+        soil_survey = lookup_soil_survey(parcel=parcel, lat=lat, lon=lon)
+        if soil_survey:
+            data["soilSurvey"] = soil_survey
+            dirty = True
+
     if dirty:
         write_data(data)
 
@@ -98,6 +108,7 @@ def get_enriched_property_data() -> dict:
         "habitatSegmentation": habitat_segmentation,
         "paintStrokes": data.get("paintStrokes", []),
         "habitatObjects": data.get("habitatObjects", []),
+        "soilSurvey": soil_survey,
     }
 
 
@@ -123,6 +134,11 @@ def save_and_enrich_property_address(
     habitat_segmentation = (
         segment_parcel_habitats(parcel, config.get_mapbox_token()) if parcel else None
     )
+    soil_survey = (
+        lookup_soil_survey(parcel=parcel, lat=lat, lon=lon)
+        if (parcel or has_coords)
+        else None
+    )
 
     data["address"] = cleaned
     data["lat"] = lat
@@ -133,6 +149,7 @@ def save_and_enrich_property_address(
     data["birdOfTheDay"] = bird_of_the_day
     data["keystonePlants"] = keystone_plants
     data["habitatSegmentation"] = habitat_segmentation
+    data["soilSurvey"] = soil_survey
     write_data(data)
 
     return {
@@ -147,5 +164,6 @@ def save_and_enrich_property_address(
         "habitatSegmentation": habitat_segmentation,
         "paintStrokes": data.get("paintStrokes", []),
         "habitatObjects": data.get("habitatObjects", []),
+        "soilSurvey": soil_survey,
         "saved": True,
     }

@@ -23,6 +23,15 @@ export function createInitialMapLayers() {
       mapLayerIds: ['parcel-boundary-fill', 'parcel-boundary-outline'],
     },
     {
+      id: 'soil-survey-layer',
+      name: 'Soil Survey (USDA)',
+      type: 'overlay',
+      visible: true,
+      toggleable: true,
+      color: '#c28b5e',
+      mapLayerIds: ['soil-survey-fill', 'soil-survey-outline'],
+    },
+    {
       id: 'inaturalist-observations-layer',
       name: 'iNaturalist Observations',
       type: 'overlay',

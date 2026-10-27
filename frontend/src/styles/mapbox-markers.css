@@ -567,3 +567,85 @@
 .popup-obs-link a:hover {
   text-decoration: underline;
 }
+
+/* =====================================================================
+   USDA Soil Survey Map Unit Centered Markers & Popups
+   ===================================================================== */
+.soil-unit-marker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: auto;
+  cursor: pointer;
+  user-select: none;
+  z-index: 10;
+  transition: transform 0.15s ease;
+}
+
+.soil-unit-marker:hover {
+  transform: scale(1.18);
+  z-index: 20;
+}
+
+.soil-marker-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(20, 32, 24, 0.92);
+  border: 1.5px solid var(--soil-color, #c28b5e);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.65), 0 0 5px rgba(0, 0, 0, 0.5);
+  border-radius: 9999px;
+  padding: 2px 8px;
+  backdrop-filter: blur(2px);
+  gap: 4px;
+}
+
+.soil-marker-symbol {
+  font-family: inherit;
+  font-weight: 800;
+  font-size: 0.76rem;
+  letter-spacing: 0.05em;
+  color: #ffffff;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.8);
+}
+
+.soil-marker-popup .mapboxgl-popup-content,
+.mapboxgl-popup .soil-popup-content {
+  background: rgba(18, 30, 24, 0.96) !important;
+  color: #f1f5f9 !important;
+  border: 1px solid rgba(194, 139, 94, 0.45) !important;
+  border-radius: 8px !important;
+  padding: 8px 12px !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5) !important;
+  max-width: 260px;
+}
+
+.soil-popup-badge {
+  display: inline-block;
+  font-weight: 800;
+  font-size: 0.75rem;
+  color: #ffffff;
+  padding: 2px 7px;
+  border-radius: 4px;
+  margin-bottom: 4px;
+  letter-spacing: 0.04em;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+
+.soil-popup-name {
+  font-size: 0.82rem;
+  font-weight: 600;
+  color: #e2e8f0;
+  line-height: 1.35;
+  margin-bottom: 4px;
+}
+
+.soil-popup-pct {
+  font-size: 0.75rem;
+  color: #94a3b8;
+}
+
+.soil-popup-pct strong {
+  color: #f8fafc;
+}
+

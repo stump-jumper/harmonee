@@ -1,4 +1,4 @@
-"""Property address, geocoding autocomplete, supported counties, and imagery metadata endpoints."""
+"""Property address, geocoding autocomplete, supported counties, imagery metadata, and soil survey endpoints."""
 
 from fastapi import APIRouter, Query
 
@@ -10,6 +10,8 @@ from backend.services.property_service import (
     get_enriched_property_data,
     save_and_enrich_property_address,
 )
+from backend.services.soil import lookup_soil_survey
+from backend.storage import read_data, write_data
 
 router = APIRouter(prefix="/api", tags=["property"])
 
@@ -47,3 +49,26 @@ def get_supported_counties():
 @router.get("/imagery-date")
 def get_imagery_date(lat: float, lon: float):
     return {"captureDate": lookup_capture_date(float(lat), float(lon))}
+
+
+@router.get("/soil-survey")
+def get_soil_survey():
+    """Retrieve USDA Web Soil Survey data for the current property."""
+    data = read_data()
+    soil = data.get("soilSurvey")
+    if soil and isinstance(soil, dict) and soil.get("summary"):
+        return soil
+    parcel = data.get("parcel")
+    lat = data.get("lat")
+    lon = data.get("lon")
+    result = lookup_soil_survey(parcel=parcel, lat=lat, lon=lon)
+    if result:
+        data["soilSurvey"] = result
+        write_data(data)
+        return result
+    return {
+        "source": "USDA Web Soil Survey (Soil Data Access)",
+        "summary": [],
+        "geojson": {"type": "FeatureCollection", "features": []},
+        "labelsGeojson": {"type": "FeatureCollection", "features": []},
+    }

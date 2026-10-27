@@ -16,11 +16,13 @@ import MapLayersPanel from '../components/map/MapLayersPanel.vue'
 import ObjectPlacementToolbar from '../components/map/ObjectPlacementToolbar.vue'
 import PaintToolbar from '../components/map/PaintToolbar.vue'
 import PropertyInfoCard from '../components/map/PropertyInfoCard.vue'
+import SoilSurveyCard from '../components/map/SoilSurveyCard.vue'
 import { useEbirdSightings } from '../composables/useEbirdSightings.js'
 import { useInaturalistObservations } from '../composables/useInaturalistObservations.js'
 import { useHabitatObjects } from '../composables/useHabitatObjects.js'
 import { useHabitatPaint } from '../composables/useHabitatPaint.js'
 import { useMapLayers } from '../composables/useMapLayers.js'
+import { useSoilSurvey } from '../composables/useSoilSurvey.js'
 import { calculateParcelAcreage, getParcelCoordinatesBounds } from '../utils/geo.js'
 
 const token = import.meta.env?.VITE_MAPBOX_TOKEN || ''
@@ -53,6 +55,8 @@ const { layers, isLayerVisible, setLayerVisibility, toggleLayer, registerHabitat
         syncWithLayerToggle(layer.visible)
       } else if (layer.id === 'inaturalist-observations-layer') {
         syncInaturalistWithLayerToggle(layer.visible)
+      } else if (layer.id === 'soil-survey-layer') {
+        syncSoilWithLayerToggle(layer.visible)
       }
     },
   })
@@ -142,6 +146,21 @@ const {
   focusOnSighting,
   cleanupEbirdMarkers,
 } = useEbirdSightings(mapRef, {
+  isLayerVisible,
+  setLayerVisibility,
+})
+
+// USDA Soil Survey composable
+const {
+  soilSurveyData,
+  soilLoading,
+  selectedSoilSymbol,
+  syncWithLayerToggle: syncSoilWithLayerToggle,
+  renderSoilOnMap,
+  focusOnSoilUnit,
+  cleanupSoilMarkers,
+  loadSoilSurvey,
+} = useSoilSurvey(mapRef, {
   isLayerVisible,
   setLayerVisibility,
 })
@@ -236,6 +255,9 @@ onMounted(async () => {
     }
     if (data.habitatSegmentation) {
       registerHabitatLayers(data.habitatSegmentation)
+    }
+    if (data.soilSurvey) {
+      soilSurveyData.value = data.soilSurvey
     }
     if (lat != null && lon != null) {
       loadEbirdSightings(lat, lon)
@@ -374,6 +396,11 @@ onMounted(async () => {
     if (habitatSegmentation.value) {
       registerHabitatLayers(habitatSegmentation.value)
     }
+    if (soilSurveyData.value) {
+      renderSoilOnMap(soilSurveyData.value)
+    } else if (rawParcel || (lat != null && lon != null)) {
+      loadSoilSurvey()
+    }
     if (habitatObjects.value.length > 0) {
       renderHabitatObjectMarkers()
     }
@@ -427,6 +454,7 @@ onBeforeUnmount(() => {
   cleanupObjectMarkers()
   cleanupEbirdMarkers()
   cleanupInaturalistMarkers()
+  cleanupSoilMarkers()
   if (mapRef.value) {
     mapRef.value.remove()
     mapRef.value = null
@@ -442,6 +470,15 @@ onBeforeUnmount(() => {
   >
     <div class="map-sidebar-left">
       <PropertyInfoCard :address="currentAddress" :acreage="parcelAcreage" />
+
+      <SoilSurveyCard
+        v-if="soilSurveyData && soilSurveyData.summary && soilSurveyData.summary.length > 0"
+        :soil-data="soilSurveyData"
+        :is-layer-visible="isLayerVisible('soil-survey-layer')"
+        :selected-symbol="selectedSoilSymbol"
+        @toggle-layer="toggleLayer(layers.find((l) => l.id === 'soil-survey-layer'))"
+        @focus-unit="focusOnSoilUnit"
+      />
 
       <InaturalistObservationsPanel
         v-if="currentAddress"
@@ -496,6 +533,7 @@ onBeforeUnmount(() => {
         :is-object-placement-mode="isObjectPlacementMode"
         :ebird-total-sightings="ebirdSightingsData?.totalSightings || 0"
         :inaturalist-total-observations="inaturalistData?.totalObservations || 0"
+        :soil-units-count="soilSurveyData?.summary?.length || 0"
         @toggle-layer="toggleLayer"
         @toggle-paint-mode="togglePaintMode"
         @undo-stroke="undoStroke"

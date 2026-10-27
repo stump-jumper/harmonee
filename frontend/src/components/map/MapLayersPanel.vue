@@ -11,6 +11,7 @@ defineProps({
   isObjectPlacementMode: { type: Boolean, default: false },
   ebirdTotalSightings: { type: Number, default: 0 },
   inaturalistTotalObservations: { type: Number, default: 0 },
+  soilUnitsCount: { type: Number, default: 0 },
 })
 
 const emit = defineEmits([
@@ -59,6 +60,9 @@ const emit = defineEmits([
           </span>
           <span v-else-if="layer.id === 'ebird-sightings-layer'" class="layer-tag count-tag">
             {{ ebirdTotalSightings }}
+          </span>
+          <span v-else-if="layer.id === 'soil-survey-layer'" class="layer-tag count-tag">
+            {{ soilUnitsCount }}
           </span>
           <span v-else-if="layer.percentage != null" class="layer-tag">
             {{ layer.percentage }}%

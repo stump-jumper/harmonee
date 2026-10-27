@@ -1,0 +1,235 @@
+import test from 'node:test'
+import assert from 'node:assert/strict'
+import { ref } from 'vue'
+
+import { useSoilSurvey } from '../src/composables/useSoilSurvey.js'
+import { fetchSoilSurvey } from '../src/api/propertyApi.js'
+
+test('useSoilSurvey initializes with empty state', () => {
+  const mapRef = ref(null)
+  const { soilSurveyData, soilLoading, soilError, selectedSoilSymbol } = useSoilSurvey(mapRef)
+
+  assert.equal(soilSurveyData.value, null)
+  assert.equal(soilLoading.value, false)
+  assert.equal(soilError.value, '')
+  assert.equal(selectedSoilSymbol.value, null)
+})
+
+test('useSoilSurvey renders layers and centered symbol markers on map', () => {
+  const sources = new Map()
+  const layers = new Map()
+  const eventListeners = new Map()
+
+  const fakeMapInstance = {
+    isStyleLoaded: () => true,
+    getSource: (id) => sources.get(id),
+    addSource: (id, config) => sources.set(id, { ...config, setData: (d) => (config.data = d) }),
+    getLayer: (id) => layers.get(id),
+    addLayer: (config, beforeId) => layers.set(config.id, { ...config, beforeId }),
+    setLayoutProperty: (id, prop, val) => {
+      if (layers.has(id)) layers.get(id).layout[prop] = val
+    },
+    on: (evt, layerId, handler) => {
+      const key = `${evt}:${layerId || ''}`
+      eventListeners.set(key, handler)
+    },
+    getCanvas: () => ({ style: {} }),
+    getZoom: () => 18,
+    flyTo: (opts) => {
+      fakeMapInstance.lastFlyTo = opts
+    },
+  }
+
+  const mapRef = ref(fakeMapInstance)
+
+  class FakePopup {
+    constructor(opts) {
+      this.opts = opts
+      this._open = false
+      this._html = ''
+    }
+    setLngLat(coords) {
+      this.coords = coords
+      return this
+    }
+    setHTML(html) {
+      this._html = html
+      return this
+    }
+    addTo(map) {
+      this._open = true
+      return this
+    }
+    isOpen() {
+      return this._open
+    }
+    remove() {
+      this._open = false
+    }
+  }
+
+  class FakeMarker {
+    constructor(opts) {
+      this.element = opts.element
+      this.anchor = opts.anchor
+      this.coords = null
+      this._popup = null
+    }
+    setLngLat(coords) {
+      this.coords = coords
+      return this
+    }
+    setPopup(popup) {
+      this._popup = popup
+      return this
+    }
+    getPopup() {
+      return this._popup
+    }
+    togglePopup() {
+      if (this._popup) {
+        this._popup._open = !this._popup._open
+      }
+    }
+    getElement() {
+      return this.element
+    }
+    addTo(map) {
+      return this
+    }
+    remove() {
+      this.removed = true
+    }
+  }
+
+  const fakeDoc = {
+    createElement: (tag) => {
+      const el = {
+        tagName: tag,
+        className: '',
+        style: {
+          display: 'flex',
+          setProperty: (k, v) => (el.style[k] = v),
+        },
+        attributes: {},
+        setAttribute: (k, v) => (el.attributes[k] = v),
+        getAttribute: (k) => el.attributes[k],
+        children: [],
+        appendChild: (child) => el.children.push(child),
+        addEventListener: (evt, fn) => {
+          el[`on_${evt}`] = fn
+        },
+      }
+      return el
+    },
+  }
+
+  let layerVisible = true
+  const {
+    soilSurveyData,
+    soilMarkers,
+    renderSoilOnMap,
+    syncWithLayerToggle,
+    focusOnSoilUnit,
+    cleanupSoilMarkers,
+  } = useSoilSurvey(mapRef, {
+    isLayerVisible: (id) => (id === 'soil-survey-layer' ? layerVisible : true),
+    mapboxLib: { Marker: FakeMarker, Popup: FakePopup },
+    doc: fakeDoc,
+  })
+
+  const mockData = {
+    summary: [
+      {
+        mukey: '543135',
+        musym: 'DbB',
+        muname: 'Duffield silt loam, 3 to 8 percent slopes',
+        percentage: 50.1,
+        color: '#c28b5e',
+      },
+      {
+        mukey: '543212',
+        musym: 'WaC',
+        muname: 'Washington silt loam, 8 to 15 percent slopes',
+        percentage: 30.4,
+        color: '#8b7355',
+      },
+    ],
+    geojson: {
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          id: 'soil-DbB',
+          properties: { musym: 'DbB', muname: 'Duffield silt loam', percentage: 50.1, color: '#c28b5e' },
+          geometry: { type: 'Polygon', coordinates: [] },
+        },
+      ],
+    },
+    labelsGeojson: {
+      type: 'FeatureCollection',
+      features: [
+        {
+          type: 'Feature',
+          properties: { musym: 'DbB', muname: 'Duffield silt loam', percentage: 50.1, color: '#c28b5e' },
+          geometry: { type: 'Point', coordinates: [-75.5568, 40.6315] },
+        },
+        {
+          type: 'Feature',
+          properties: { musym: 'WaC', muname: 'Washington silt loam', percentage: 30.4, color: '#8b7355' },
+          geometry: { type: 'Point', coordinates: [-75.5562, 40.6318] },
+        },
+      ],
+    },
+  }
+
+  renderSoilOnMap(mockData)
+
+  // Verify sources and fill/outline layers
+  assert.ok(sources.has('soil-survey-data'))
+  assert.ok(layers.has('soil-survey-fill'))
+  assert.ok(layers.has('soil-survey-outline'))
+  assert.equal(layers.get('soil-survey-fill').layout.visibility, 'visible')
+
+  // Verify centered markers were created
+  assert.equal(soilMarkers.length, 2)
+  assert.equal(soilMarkers[0].anchor, 'center')
+  assert.deepEqual(soilMarkers[0].coords, [-75.5568, 40.6315])
+  assert.equal(soilMarkers[0].getElement().getAttribute('data-symbol'), 'DbB')
+
+  // Test visibility toggle
+  layerVisible = false
+  syncWithLayerToggle(false)
+  assert.equal(soilMarkers[0].getElement().style.display, 'none')
+
+  layerVisible = true
+  syncWithLayerToggle(true)
+  assert.equal(soilMarkers[0].getElement().style.display, 'flex')
+
+  // Test focusing on a soil unit
+  soilSurveyData.value = mockData
+  focusOnSoilUnit(mockData.summary[1]) // WaC
+  assert.ok(fakeMapInstance.lastFlyTo)
+  assert.deepEqual(fakeMapInstance.lastFlyTo.center, [-75.5562, 40.6318])
+
+  // Test cleanup
+  cleanupSoilMarkers()
+  assert.equal(soilMarkers.length, 0)
+})
+
+test('fetchSoilSurvey queries /api/soil-survey endpoint', async () => {
+  let calledUrl = ''
+  globalThis.fetch = async (url) => {
+    calledUrl = url
+    return {
+      ok: true,
+      json: async () => ({
+        summary: [{ musym: 'DbB', muname: 'Duffield silt loam', percentage: 100 }],
+      }),
+    }
+  }
+
+  const result = await fetchSoilSurvey()
+  assert.equal(calledUrl, '/api/soil-survey')
+  assert.equal(result.summary[0].musym, 'DbB')
+})

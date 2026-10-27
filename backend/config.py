@@ -23,6 +23,10 @@ EBIRD_API_KEY = os.getenv("EBIRD_API_KEY", "")
 INATURALIST_USERNAME = os.getenv("INATURALIST_USERNAME", "")
 INATURALIST_API_TOKEN = os.getenv("INATURALIST_API_TOKEN", "")
 INATURALIST_API_BASE = "https://api.inaturalist.org/v1"
+USDA_SDA_REST_URL = os.getenv(
+    "USDA_SDA_REST_URL",
+    "https://SDMDataAccess.sc.egov.usda.gov/Tabular/post.rest",
+)
 
 
 def get_mapbox_token() -> str:
