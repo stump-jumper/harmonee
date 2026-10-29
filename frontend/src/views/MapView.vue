@@ -369,6 +369,30 @@ onMounted(async () => {
       tileSize: 256,
       maxzoom: 22,
     },
+    'naip-cir-tiles': {
+      type: 'raster',
+      tiles: [
+        'https://planetarycomputer.microsoft.com/api/data/v1/collections/naip/items/pa_m_4007520_se_18_060_20220429/tiles/WebMercatorQuad/{z}/{x}/{y}@1x?assets=image&asset_bidx=image%7C4,1,2',
+      ],
+      tileSize: 256,
+      maxzoom: 22,
+    },
+    'pema-leafoff-tiles': {
+      type: 'raster',
+      tiles: [
+        'https://imagery.pasda.psu.edu/arcgis/rest/services/pasda/PEMAImagery2018/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=256,256&format=png&transparent=true&f=image',
+      ],
+      tileSize: 256,
+      maxzoom: 22,
+    },
+    'lidar-hillshade-tiles': {
+      type: 'raster',
+      tiles: [
+        'https://imagery.pasda.psu.edu/arcgis/rest/services/pasda/PAMAP_Hillshade_WEB/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=256,256&format=png&transparent=true&f=image',
+      ],
+      tileSize: 256,
+      maxzoom: 22,
+    },
     'usgs-tnm-tiles': {
       type: 'raster',
       tiles: [
@@ -376,6 +400,14 @@ onMounted(async () => {
       ],
       tileSize: 256,
       maxzoom: 16,
+    },
+    'esri-wayback-tiles': {
+      type: 'raster',
+      tiles: [
+        'https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
+      ],
+      tileSize: 256,
+      maxzoom: 22,
     },
     'user-paint-strokes': {
       type: 'geojson',
@@ -420,12 +452,48 @@ onMounted(async () => {
       paint: { 'raster-opacity': 1.0 },
     },
     {
+      id: 'naip-cir-layer',
+      type: 'raster',
+      source: 'naip-cir-tiles',
+      minzoom: 0,
+      maxzoom: 22,
+      layout: { visibility: isLayerVisible('satellite-naip-cir') ? 'visible' : 'none' },
+      paint: { 'raster-opacity': 1.0 },
+    },
+    {
+      id: 'pema-leafoff-layer',
+      type: 'raster',
+      source: 'pema-leafoff-tiles',
+      minzoom: 0,
+      maxzoom: 22,
+      layout: { visibility: isLayerVisible('satellite-pema-leafoff') ? 'visible' : 'none' },
+      paint: { 'raster-opacity': 1.0 },
+    },
+    {
+      id: 'lidar-hillshade-layer',
+      type: 'raster',
+      source: 'lidar-hillshade-tiles',
+      minzoom: 0,
+      maxzoom: 22,
+      layout: { visibility: isLayerVisible('satellite-lidar-hillshade') ? 'visible' : 'none' },
+      paint: { 'raster-opacity': 1.0 },
+    },
+    {
       id: 'usgs-tnm-layer',
       type: 'raster',
       source: 'usgs-tnm-tiles',
       minzoom: 0,
       maxzoom: 22,
       layout: { visibility: isLayerVisible('satellite-usgs-tnm') ? 'visible' : 'none' },
+      paint: { 'raster-opacity': 1.0 },
+    },
+    {
+      id: 'esri-wayback-layer',
+      type: 'raster',
+      source: 'esri-wayback-tiles',
+      minzoom: 0,
+      maxzoom: 22,
+      layout: { visibility: isLayerVisible('satellite-esri-wayback') ? 'visible' : 'none' },
       paint: { 'raster-opacity': 1.0 },
     },
   ]

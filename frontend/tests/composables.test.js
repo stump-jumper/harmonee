@@ -57,6 +57,16 @@ test('useMapLayers manages layer visibility and registration', () => {
   assert.ok(naip, 'USDA NAIP layer should exist')
   assert.ok(usgs, 'USGS TNM layer should exist')
 
+  const pema = layers.value.find((l) => l.id === 'satellite-pema-leafoff')
+  const lidar = layers.value.find((l) => l.id === 'satellite-lidar-hillshade')
+  const cir = layers.value.find((l) => l.id === 'satellite-naip-cir')
+  const wayback = layers.value.find((l) => l.id === 'satellite-esri-wayback')
+
+  assert.ok(pema, 'PEMA Leaf-Off layer should exist')
+  assert.ok(lidar, 'LiDAR Hillshade layer should exist')
+  assert.ok(cir, 'NAIP Color-Infrared layer should exist')
+  assert.ok(wayback, 'Esri Wayback layer should exist')
+
   assert.equal(sentinel.visible, false, 'Sentinel-2 initially off')
   assert.equal(sentinel.toggleable, true, 'Sentinel-2 toggleable')
   toggleLayer(sentinel)

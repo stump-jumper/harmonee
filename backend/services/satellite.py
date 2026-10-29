@@ -42,15 +42,60 @@ DEFAULT_TEST_LAYERS: List[Dict[str, Any]] = [
     },
     {
         "id": "satellite-naip",
-        "name": "USDA NAIP Aerial",
+        "name": "USDA NAIP Aerial (Natural Color)",
         "layerId": "naip-layer",
         "sourceId": "naip-tiles",
         "badge": "0.6m • Apr 2022",
         "date": "2022-04-29",
         "cloudCover": 0.0,
         "resolution": "0.6m",
-        "description": "High-resolution orthoimagery from the USDA Farm Service Agency",
+        "description": "High-resolution true-color orthoimagery from the USDA Farm Service Agency",
         "tileUrl": "https://planetarycomputer.microsoft.com/api/data/v1/collections/naip/items/pa_m_4007520_se_18_060_20220429/tiles/WebMercatorQuad/{z}/{x}/{y}@1x?assets=image&asset_bidx=image%7C1,2,3",
+        "tileSize": 256,
+        "maxzoom": 22,
+        "opacity": 1.0,
+    },
+    {
+        "id": "satellite-naip-cir",
+        "name": "USDA NAIP Color-Infrared (CIR)",
+        "layerId": "naip-cir-layer",
+        "sourceId": "naip-cir-tiles",
+        "badge": "0.6m • Infrared",
+        "date": "2022-04-29",
+        "cloudCover": 0.0,
+        "resolution": "0.6m",
+        "description": "False-color near-infrared (CIR) rendering chlorophyll in bright red to analyze vegetation health and garden beds",
+        "tileUrl": "https://planetarycomputer.microsoft.com/api/data/v1/collections/naip/items/pa_m_4007520_se_18_060_20220429/tiles/WebMercatorQuad/{z}/{x}/{y}@1x?assets=image&asset_bidx=image%7C4,1,2",
+        "tileSize": 256,
+        "maxzoom": 22,
+        "opacity": 1.0,
+    },
+    {
+        "id": "satellite-pema-leafoff",
+        "name": "PEMA Leaf-Off Aerial (PA State)",
+        "layerId": "pema-leafoff-layer",
+        "sourceId": "pema-leafoff-tiles",
+        "badge": "0.3m • Leaf-Off",
+        "date": "2018-2021",
+        "cloudCover": 0.0,
+        "resolution": "0.3m",
+        "description": "Pennsylvania state high-resolution leaf-off aerial survey (reveals ground structures, fences, and footpaths)",
+        "tileUrl": "https://imagery.pasda.psu.edu/arcgis/rest/services/pasda/PEMAImagery2018/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=256,256&format=png&transparent=true&f=image",
+        "tileSize": 256,
+        "maxzoom": 22,
+        "opacity": 1.0,
+    },
+    {
+        "id": "satellite-lidar-hillshade",
+        "name": "LiDAR Micro-Hillshade (PAMAP)",
+        "layerId": "lidar-hillshade-layer",
+        "sourceId": "lidar-hillshade-tiles",
+        "badge": "1m • LiDAR",
+        "date": "PAMAP",
+        "cloudCover": 0.0,
+        "resolution": "1m",
+        "description": "Bare-earth LiDAR 3D hillshade revealing micro-topography, drainage swales, and slope lines",
+        "tileUrl": "https://imagery.pasda.psu.edu/arcgis/rest/services/pasda/PAMAP_Hillshade_WEB/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=256,256&format=png&transparent=true&f=image",
         "tileSize": 256,
         "maxzoom": 22,
         "opacity": 1.0,
@@ -70,6 +115,21 @@ DEFAULT_TEST_LAYERS: List[Dict[str, Any]] = [
         "maxzoom": 16,
         "opacity": 1.0,
     },
+    {
+        "id": "satellite-esri-wayback",
+        "name": "Esri World Imagery Wayback",
+        "layerId": "esri-wayback-layer",
+        "sourceId": "esri-wayback-tiles",
+        "badge": "0.5m • Wayback",
+        "date": "Archive",
+        "cloudCover": 0.0,
+        "resolution": "0.5m",
+        "description": "Esri World Imagery digital archive basemap for multi-year aerial comparison",
+        "tileUrl": "https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        "tileSize": 256,
+        "maxzoom": 22,
+        "opacity": 1.0,
+    },
 ]
 
 
@@ -84,7 +144,6 @@ def _format_date_badge(raw_date: str) -> str:
 
 def query_recent_satellite_layers(lat: float, lon: float) -> List[Dict[str, Any]]:
     """Query recent satellite and aerial imagery layers for the given coordinates."""
-    # Start with default layers as fallback
     layers = [dict(layer) for layer in DEFAULT_TEST_LAYERS]
 
     try:
@@ -111,21 +170,10 @@ def query_recent_satellite_layers(lat: float, lon: float) -> List[Dict[str, Any]
                 short_dt = dt_str[:10]
                 badge_dt = _format_date_badge(dt_str)
                 tile_url = f"https://planetarycomputer.microsoft.com/api/data/v1/item/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}@1x?collection=sentinel-2-l2a&item={item_id}&assets=visual&asset_bidx=visual%7C1,2,3&nodata=0&format=png"
-                layers[0] = {
-                    "id": "satellite-sentinel2",
-                    "name": "Sentinel-2 (Copernicus)",
-                    "layerId": "sentinel2-layer",
-                    "sourceId": "sentinel2-tiles",
-                    "badge": f"10m • {badge_dt}",
-                    "date": short_dt,
-                    "cloudCover": cloud,
-                    "resolution": "10m",
-                    "description": "5-day revisit optical multispectral imagery from ESA Copernicus Sentinel-2",
-                    "tileUrl": tile_url,
-                    "tileSize": 256,
-                    "maxzoom": 22,
-                    "opacity": 1.0,
-                }
+                layers[0]["badge"] = f"10m • {badge_dt}"
+                layers[0]["date"] = short_dt
+                layers[0]["cloudCover"] = cloud
+                layers[0]["tileUrl"] = tile_url
     except Exception:
         pass
 
@@ -153,26 +201,15 @@ def query_recent_satellite_layers(lat: float, lon: float) -> List[Dict[str, Any]
                 short_dt = dt_str[:10]
                 badge_dt = _format_date_badge(dt_str)
                 tile_url = f"https://planetarycomputer.microsoft.com/api/data/v1/item/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}@1x?collection=landsat-c2-l2&item={item_id}&assets=red&assets=green&assets=blue&color_formula=gamma%20RGB%202.7,%20saturation%201.5,%20sigmoidal%20RGB%2015%200.55&format=png"
-                layers[1] = {
-                    "id": "satellite-landsat",
-                    "name": "Landsat 9 (USGS/NASA)",
-                    "layerId": "landsat-layer",
-                    "sourceId": "landsat-tiles",
-                    "badge": f"30m • {badge_dt}",
-                    "date": short_dt,
-                    "cloudCover": cloud,
-                    "resolution": "30m",
-                    "description": "16-day revisit optical multispectral imagery from USGS / NASA Landsat 9",
-                    "tileUrl": tile_url,
-                    "tileSize": 256,
-                    "maxzoom": 22,
-                    "opacity": 1.0,
-                }
+                layers[1]["badge"] = f"30m • {badge_dt}"
+                layers[1]["date"] = short_dt
+                layers[1]["cloudCover"] = cloud
+                layers[1]["tileUrl"] = tile_url
     except Exception:
         pass
 
     try:
-        # USDA NAIP lookup
+        # USDA NAIP lookup (updates both Natural Color and CIR)
         body = {
             "collections": ["naip"],
             "intersects": {"type": "Point", "coordinates": [lon, lat]},
@@ -192,22 +229,14 @@ def query_recent_satellite_layers(lat: float, lon: float) -> List[Dict[str, Any]
                 dt_str = f.get("properties", {}).get("datetime", "")
                 short_dt = dt_str[:10]
                 year_str = short_dt[:4] if short_dt else "NAIP"
-                tile_url = f"https://planetarycomputer.microsoft.com/api/data/v1/collections/naip/items/{item_id}/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}@1x?assets=image&asset_bidx=image%7C1,2,3"
-                layers[2] = {
-                    "id": "satellite-naip",
-                    "name": "USDA NAIP Aerial",
-                    "layerId": "naip-layer",
-                    "sourceId": "naip-tiles",
-                    "badge": f"0.6m • {year_str}",
-                    "date": short_dt,
-                    "cloudCover": 0.0,
-                    "resolution": "0.6m",
-                    "description": "High-resolution orthoimagery from the USDA Farm Service Agency",
-                    "tileUrl": tile_url,
-                    "tileSize": 256,
-                    "maxzoom": 22,
-                    "opacity": 1.0,
-                }
+                tile_url_rgb = f"https://planetarycomputer.microsoft.com/api/data/v1/collections/naip/items/{item_id}/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}@1x?assets=image&asset_bidx=image%7C1,2,3"
+                tile_url_cir = f"https://planetarycomputer.microsoft.com/api/data/v1/collections/naip/items/{item_id}/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}@1x?assets=image&asset_bidx=image%7C4,1,2"
+                layers[2]["badge"] = f"0.6m • {year_str}"
+                layers[2]["date"] = short_dt
+                layers[2]["tileUrl"] = tile_url_rgb
+                layers[3]["badge"] = f"0.6m • CIR {year_str}"
+                layers[3]["date"] = short_dt
+                layers[3]["tileUrl"] = tile_url_cir
     except Exception:
         pass
 

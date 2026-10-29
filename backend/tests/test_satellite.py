@@ -13,21 +13,25 @@ from backend.services.satellite import (
 
 class TestSatelliteLayers(unittest.TestCase):
     def test_default_test_layers_exist(self):
-        self.assertEqual(len(DEFAULT_TEST_LAYERS), 4)
+        self.assertEqual(len(DEFAULT_TEST_LAYERS), 8)
         layer_ids = [l["id"] for l in DEFAULT_TEST_LAYERS]
         self.assertIn("satellite-sentinel2", layer_ids)
         self.assertIn("satellite-landsat", layer_ids)
         self.assertIn("satellite-naip", layer_ids)
+        self.assertIn("satellite-naip-cir", layer_ids)
+        self.assertIn("satellite-pema-leafoff", layer_ids)
+        self.assertIn("satellite-lidar-hillshade", layer_ids)
         self.assertIn("satellite-usgs-tnm", layer_ids)
+        self.assertIn("satellite-esri-wayback", layer_ids)
 
     def test_format_date_badge(self):
         self.assertEqual(_format_date_badge("2026-10-26T15:00:00Z"), "Oct 26")
         self.assertEqual(_format_date_badge("invalid-date"), "invalid-da")
 
     def test_query_recent_satellite_layers_fallback(self):
-        # Even with failed network calls, it gracefully returns all 4 layers
+        # Even with failed network calls, it gracefully returns all layers
         layers = query_recent_satellite_layers(40.631667, -75.556515)
-        self.assertEqual(len(layers), 4)
+        self.assertEqual(len(layers), 8)
         for layer in layers:
             self.assertTrue(layer["tileUrl"].startswith("http"))
             self.assertIn("layerId", layer)
@@ -38,7 +42,7 @@ class TestSatelliteLayers(unittest.TestCase):
         mock_query.return_value = DEFAULT_TEST_LAYERS
         res = property_router.get_satellite_layers(lat=40.63, lon=-75.55)
         self.assertIn("layers", res)
-        self.assertEqual(len(res["layers"]), 4)
+        self.assertEqual(len(res["layers"]), 8)
         mock_query.assert_called_once_with(40.63, -75.55)
 
 
