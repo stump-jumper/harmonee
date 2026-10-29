@@ -57,3 +57,15 @@ export async function fetchSoilSurvey() {
   }
   return res.json()
 }
+
+export async function fetchSatelliteLayers(lat = null, lon = null) {
+  const query =
+    lat != null && lon != null
+      ? `?lat=${encodeURIComponent(lat)}&lon=${encodeURIComponent(lon)}`
+      : ''
+  const res = await fetch(`/api/satellite-layers${query}`)
+  if (!res.ok) {
+    throw new Error(`Failed to fetch satellite layers (${res.status})`)
+  }
+  return res.json()
+}

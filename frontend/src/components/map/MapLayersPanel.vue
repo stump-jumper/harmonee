@@ -16,6 +16,7 @@ defineProps({
 
 const emit = defineEmits([
   'toggle-layer',
+  'change-opacity',
   'toggle-paint-mode',
   'undo-stroke',
   'clear-strokes',
@@ -64,10 +65,36 @@ const emit = defineEmits([
           <span v-else-if="layer.id === 'soil-survey-layer'" class="layer-tag count-tag">
             {{ soilUnitsCount }}
           </span>
+          <span v-else-if="layer.id === 'satellite-base'" class="layer-tag base-tag">Current</span>
           <span v-else-if="layer.percentage != null" class="layer-tag">
             {{ layer.percentage }}%
           </span>
+          <span v-else-if="layer.badge" class="layer-tag badge-tag">
+            {{ layer.badge }}
+          </span>
         </label>
+        <div
+          v-if="layer.type === 'satellite-comparison' && layer.visible"
+          class="satellite-layer-controls"
+        >
+          <div class="opacity-slider-row">
+            <span class="opacity-label">Blend:</span>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.05"
+              :value="layer.opacity != null ? layer.opacity : 1"
+              @input="emit('change-opacity', layer, Number($event.target.value))"
+              class="opacity-slider"
+              title="Adjust opacity to compare against base imagery"
+            />
+            <span class="opacity-value">{{ Math.round((layer.opacity != null ? layer.opacity : 1) * 100) }}%</span>
+          </div>
+          <div v-if="layer.description" class="satellite-desc">
+            {{ layer.description }}
+          </div>
+        </div>
       </li>
     </ul>
 
@@ -247,6 +274,69 @@ const emit = defineEmits([
   color: #fcd34d !important;
   border: 1px solid rgba(245, 158, 11, 0.4) !important;
   font-weight: 700 !important;
+}
+
+.base-tag {
+  background-color: rgba(110, 231, 183, 0.15) !important;
+  color: #6ee7b7 !important;
+  border: 1px solid rgba(110, 231, 183, 0.4) !important;
+  font-weight: 600 !important;
+}
+
+.badge-tag {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+  color: var(--text-cream) !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  font-size: 0.68rem !important;
+  white-space: nowrap;
+}
+
+.satellite-layer-controls {
+  margin: 0.25rem 0 0.4rem 1.6rem;
+  padding: 0.35rem 0.5rem;
+  background-color: rgba(0, 0, 0, 0.3);
+  border-radius: 4px;
+  border-left: 2px solid var(--border-sage);
+}
+
+.opacity-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.opacity-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-weight: 600;
+  color: var(--text-cream);
+}
+
+.opacity-slider {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.2);
+  accent-color: #34d399;
+  cursor: pointer;
+}
+
+.opacity-value {
+  min-width: 32px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: #a7f3d0;
+  font-weight: 600;
+}
+
+.satellite-desc {
+  margin-top: 0.2rem;
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  line-height: 1.25;
 }
 
 .segment-btn {

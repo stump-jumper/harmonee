@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, shallowRef, toRaw } from 'vu
 import mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
 
-import { fetchImageryCaptureDate, fetchPropertyData } from '../api/propertyApi.js'
+import { fetchImageryCaptureDate, fetchPropertyData, fetchSatelliteLayers } from '../api/propertyApi.js'
 import BirdOfTheDayCard from '../components/map/BirdOfTheDayCard.vue'
 import BirdOfTheDayModal from '../components/map/BirdOfTheDayModal.vue'
 import EbirdSightingsPanel from '../components/map/EbirdSightingsPanel.vue'
@@ -46,7 +46,7 @@ const cursorPos = ref({ x: -1000, y: -1000 })
 const parcelAcreage = computed(() => calculateParcelAcreage(parcelFeature.value))
 
 // Layer management composable
-const { layers, isLayerVisible, setLayerVisibility, toggleLayer, registerHabitatLayers } =
+const { layers, isLayerVisible, setLayerVisibility, toggleLayer, setLayerOpacity, updateSatelliteLayers, registerHabitatLayers } =
   useMapLayers(mapRef, {
     onLayerToggle: (layer) => {
       if (layer.id === 'habitat-objects-layer') {
@@ -262,6 +262,13 @@ onMounted(async () => {
     if (lat != null && lon != null) {
       loadEbirdSightings(lat, lon)
       loadInaturalistObservations(lat, lon)
+      fetchSatelliteLayers(lat, lon)
+        .then((satData) => {
+          if (satData?.layers) {
+            updateSatelliteLayers(satData.layers)
+          }
+        })
+        .catch(() => {})
     }
   } catch {
     const local = localStorage.getItem('harmonee_address')
@@ -297,6 +304,38 @@ onMounted(async () => {
       tileSize: 512,
       maxzoom: 22,
     },
+    'sentinel2-tiles': {
+      type: 'raster',
+      tiles: [
+        'https://planetarycomputer.microsoft.com/api/data/v1/item/tiles/WebMercatorQuad/{z}/{x}/{y}@1x?collection=sentinel-2-l2a&item=S2C_MSIL2A_20261026T155331_R054_T18TVL_20261026T202106&assets=visual&asset_bidx=visual%7C1,2,3&nodata=0&format=png',
+      ],
+      tileSize: 256,
+      maxzoom: 22,
+    },
+    'landsat-tiles': {
+      type: 'raster',
+      tiles: [
+        'https://planetarycomputer.microsoft.com/api/data/v1/item/tiles/WebMercatorQuad/{z}/{x}/{y}@1x?collection=landsat-c2-l2&item=LC09_L2SP_015032_20261026_02_T1&assets=red&assets=green&assets=blue&color_formula=gamma%20RGB%202.7,%20saturation%201.5,%20sigmoidal%20RGB%2015%200.55&format=png',
+      ],
+      tileSize: 256,
+      maxzoom: 22,
+    },
+    'naip-tiles': {
+      type: 'raster',
+      tiles: [
+        'https://planetarycomputer.microsoft.com/api/data/v1/collections/naip/items/pa_m_4007520_se_18_060_20220429/tiles/WebMercatorQuad/{z}/{x}/{y}@1x?assets=image&asset_bidx=image%7C1,2,3',
+      ],
+      tileSize: 256,
+      maxzoom: 22,
+    },
+    'usgs-tnm-tiles': {
+      type: 'raster',
+      tiles: [
+        'https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}',
+      ],
+      tileSize: 256,
+      maxzoom: 16,
+    },
     'user-paint-strokes': {
       type: 'geojson',
       data: { type: 'FeatureCollection', features: [] },
@@ -310,6 +349,43 @@ onMounted(async () => {
       source: 'mapbox-satellite-tiles',
       minzoom: 0,
       maxzoom: 22,
+      layout: { visibility: isLayerVisible('satellite-base') ? 'visible' : 'none' },
+    },
+    {
+      id: 'sentinel2-layer',
+      type: 'raster',
+      source: 'sentinel2-tiles',
+      minzoom: 0,
+      maxzoom: 22,
+      layout: { visibility: isLayerVisible('satellite-sentinel2') ? 'visible' : 'none' },
+      paint: { 'raster-opacity': 1.0 },
+    },
+    {
+      id: 'landsat-layer',
+      type: 'raster',
+      source: 'landsat-tiles',
+      minzoom: 0,
+      maxzoom: 22,
+      layout: { visibility: isLayerVisible('satellite-landsat') ? 'visible' : 'none' },
+      paint: { 'raster-opacity': 1.0 },
+    },
+    {
+      id: 'naip-layer',
+      type: 'raster',
+      source: 'naip-tiles',
+      minzoom: 0,
+      maxzoom: 22,
+      layout: { visibility: isLayerVisible('satellite-naip') ? 'visible' : 'none' },
+      paint: { 'raster-opacity': 1.0 },
+    },
+    {
+      id: 'usgs-tnm-layer',
+      type: 'raster',
+      source: 'usgs-tnm-tiles',
+      minzoom: 0,
+      maxzoom: 22,
+      layout: { visibility: isLayerVisible('satellite-usgs-tnm') ? 'visible' : 'none' },
+      paint: { 'raster-opacity': 1.0 },
     },
   ]
 
@@ -535,6 +611,7 @@ onBeforeUnmount(() => {
         :inaturalist-total-observations="inaturalistData?.totalObservations || 0"
         :soil-units-count="soilSurveyData?.summary?.length || 0"
         @toggle-layer="toggleLayer"
+        @change-opacity="setLayerOpacity"
         @toggle-paint-mode="togglePaintMode"
         @undo-stroke="undoStroke"
         @clear-strokes="clearAllStrokes"

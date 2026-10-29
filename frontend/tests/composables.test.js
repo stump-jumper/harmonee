@@ -15,7 +15,7 @@ globalThis.fetch = async () => ({
 
 test('useMapLayers manages layer visibility and registration', () => {
   const mapRef = ref(null)
-  const { layers, isLayerVisible, setLayerVisibility, toggleLayer, registerHabitatLayers } =
+  const { layers, isLayerVisible, setLayerVisibility, toggleLayer, setLayerOpacity, updateSatelliteLayers, registerHabitatLayers } =
     useMapLayers(mapRef)
 
   // Property boundary layer should be visible by default
@@ -45,6 +45,30 @@ test('useMapLayers manages layer visibility and registration', () => {
   const dynamic = layers.value.find((l) => l.id === 'habitat-canopy')
   assert.ok(dynamic)
   assert.equal(dynamic.percentage, 45.2)
+
+  // Satellite comparison layers check
+  const sentinel = layers.value.find((l) => l.id === 'satellite-sentinel2')
+  const landsat = layers.value.find((l) => l.id === 'satellite-landsat')
+  const naip = layers.value.find((l) => l.id === 'satellite-naip')
+  const usgs = layers.value.find((l) => l.id === 'satellite-usgs-tnm')
+
+  assert.ok(sentinel, 'Sentinel-2 layer should exist')
+  assert.ok(landsat, 'Landsat 9 layer should exist')
+  assert.ok(naip, 'USDA NAIP layer should exist')
+  assert.ok(usgs, 'USGS TNM layer should exist')
+
+  assert.equal(sentinel.visible, false, 'Sentinel-2 initially off')
+  assert.equal(sentinel.toggleable, true, 'Sentinel-2 toggleable')
+  toggleLayer(sentinel)
+  assert.equal(sentinel.visible, true, 'Sentinel-2 toggles on')
+
+  setLayerOpacity(sentinel, 0.75)
+  assert.equal(sentinel.opacity, 0.75)
+
+  updateSatelliteLayers([
+    { id: 'satellite-sentinel2', badge: '10m • Custom' }
+  ])
+  assert.equal(sentinel.badge, '10m • Custom')
 })
 
 test('useHabitatPaint manages brush selection, paint mode and strokes', () => {
