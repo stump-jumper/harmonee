@@ -1,69 +1,99 @@
 <script setup>
 defineProps({
+  loading: { type: Boolean, default: false },
   soilData: { type: Object, default: null },
-  isLayerVisible: { type: Boolean, default: true },
+  expanded: { type: Boolean, default: false },
   selectedSymbol: { type: String, default: null },
 })
 
-const emit = defineEmits(['toggle-layer', 'focus-unit'])
+const emit = defineEmits(['toggle-expand', 'focus-unit', 'refresh'])
 </script>
 
 <template>
-  <div v-if="soilData && soilData.summary && soilData.summary.length > 0" class="map-panel soil-panel">
-    <div class="soil-header">
-      <div class="panel-heading">Soil Survey</div>
-      <button
-        type="button"
-        class="soil-layer-toggle-btn"
-        :class="{ active: isLayerVisible }"
-        :title="isLayerVisible ? 'Hide soil map layer' : 'Show soil map layer'"
-        @click="emit('toggle-layer')"
-      >
-        <span class="toggle-icon">{{ isLayerVisible ? '👁️' : '👁️‍🗨️' }}</span>
-        <span>{{ isLayerVisible ? 'Layer On' : 'Layer Off' }}</span>
-      </button>
+  <div class="map-panel soil-panel">
+    <div
+      class="panel-header-row clickable-header"
+      title="Click to expand/collapse USDA soil survey"
+      @click="emit('toggle-expand')"
+    >
+      <div class="panel-title-wrap">
+        <span class="soil-badge-icon">🌾</span>
+        <div>
+          <div class="panel-heading">Soil Survey</div>
+          <div class="soil-subtitle">USDA Web Soil Survey • Property Parcel AOI</div>
+        </div>
+      </div>
+
+      <div class="panel-header-actions">
+        <button
+          type="button"
+          class="panel-refresh-btn"
+          title="Refresh USDA soil survey"
+          :disabled="loading"
+          @click.stop="emit('refresh')"
+        >
+          <span :class="['refresh-icon', { spinning: loading }]">↻</span>
+        </button>
+        <span v-if="loading" class="soil-count-badge loading">Loading...</span>
+        <span v-else-if="soilData?.summary" class="soil-count-badge">
+          {{ soilData.summary.length }} units
+        </span>
+        <span class="expand-chevron">{{ expanded ? '▾' : '▸' }}</span>
+      </div>
     </div>
 
-    <div class="soil-source-tag">USDA Web Soil Survey • Property Parcel AOI</div>
+    <template v-if="expanded">
+      <div v-if="loading" class="soil-loading-state">
+        <span class="soil-spinner"></span>
+        <span>Loading USDA soil survey...</span>
+      </div>
 
-    <ul class="soil-unit-list">
-      <li
-        v-for="unit in soilData.summary"
-        :key="unit.musym"
-        class="soil-unit-item"
-        :class="{ selected: selectedSymbol === unit.musym }"
-        @click="emit('focus-unit', unit)"
-      >
-        <div class="soil-unit-top">
-          <span
-            class="soil-symbol-badge"
-            :style="{ backgroundColor: unit.color, borderColor: unit.color }"
+      <template v-else-if="soilData?.summary && soilData.summary.length > 0">
+        <ul class="soil-unit-list">
+          <li
+            v-for="unit in soilData.summary"
+            :key="unit.musym"
+            class="soil-unit-item"
+            :class="{ selected: selectedSymbol === unit.musym }"
+            title="Click to locate on map"
+            @click="emit('focus-unit', unit)"
           >
-            {{ unit.musym }}
-          </span>
-          <div class="soil-unit-meta">
-            <div class="soil-unit-name" :title="unit.muname">
-              {{ unit.muname }}
+            <div class="soil-unit-top">
+              <span
+                class="soil-symbol-badge"
+                :style="{ backgroundColor: unit.color, borderColor: unit.color }"
+              >
+                {{ unit.musym }}
+              </span>
+              <div class="soil-unit-meta">
+                <div class="soil-unit-name" :title="unit.muname">
+                  {{ unit.muname }}
+                </div>
+                <div class="soil-unit-pct">
+                  <strong>{{ unit.percentage }}%</strong>
+                  <span class="pct-label">of property</span>
+                </div>
+              </div>
             </div>
-            <div class="soil-unit-pct">
-              <strong>{{ unit.percentage }}%</strong>
-              <span class="pct-label">of property</span>
+
+            <div class="soil-bar-track">
+              <div
+                class="soil-bar-fill"
+                :style="{ width: `${unit.percentage}%`, backgroundColor: unit.color }"
+              ></div>
             </div>
-          </div>
-        </div>
+          </li>
+        </ul>
 
-        <div class="soil-bar-track">
-          <div
-            class="soil-bar-fill"
-            :style="{ width: `${unit.percentage}%`, backgroundColor: unit.color }"
-          ></div>
+        <div class="soil-card-footer">
+          <span class="footer-note">Total property coverage: 100%</span>
         </div>
-      </li>
-    </ul>
+      </template>
 
-    <div class="soil-card-footer">
-      <span class="footer-note">Total property coverage: 100%</span>
-    </div>
+      <div v-else class="soil-empty-state">
+        <p>No USDA soil survey data available for this parcel.</p>
+      </div>
+    </template>
   </div>
 </template>
 
@@ -71,48 +101,140 @@ const emit = defineEmits(['toggle-layer', 'focus-unit'])
 .soil-panel {
   display: flex;
   flex-direction: column;
-  gap: 0.45rem;
+  gap: 0.5rem;
 }
 
-.soil-header {
+.panel-header-row.clickable-header {
+  cursor: pointer;
+  user-select: none;
+  border-radius: 4px;
+  padding: 2px 3px;
+  margin: -2px -3px;
+  transition: opacity 0.15s ease, background-color 0.15s ease;
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 
-.soil-header .panel-heading {
-  margin-bottom: 0;
+.panel-header-row.clickable-header:hover {
+  opacity: 0.95;
+  background-color: rgba(255, 255, 255, 0.04);
 }
 
-.soil-layer-toggle-btn {
+.panel-title-wrap {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45rem;
+}
+
+.soil-badge-icon {
+  font-size: 1.15rem;
+  line-height: 1;
+  margin-top: 1px;
+}
+
+.soil-subtitle {
+  font-size: 0.7rem;
+  color: var(--text-muted);
+  opacity: 0.9;
+  margin-top: -0.2rem;
+}
+
+.panel-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.panel-refresh-btn {
   display: inline-flex;
   align-items: center;
-  gap: 0.3rem;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.15);
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.18);
   border-radius: 4px;
   color: var(--text-muted);
-  font-size: 0.72rem;
-  padding: 2px 7px;
   cursor: pointer;
+  font-size: 0.85rem;
+  line-height: 1;
   transition: all 0.15s ease;
 }
 
-.soil-layer-toggle-btn:hover {
-  background: rgba(255, 255, 255, 0.15);
-  color: var(--text-cream);
+.panel-refresh-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.14);
+  color: #f2cc8f;
+  border-color: rgba(242, 204, 143, 0.45);
+  transform: scale(1.08);
 }
 
-.soil-layer-toggle-btn.active {
-  background: rgba(194, 139, 94, 0.22);
-  border-color: rgba(194, 139, 94, 0.55);
+.panel-refresh-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.refresh-icon {
+  display: inline-block;
+  transition: transform 0.2s ease;
+}
+
+.refresh-icon.spinning {
+  animation: refresh-spin 0.8s linear infinite;
+}
+
+@keyframes refresh-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.soil-count-badge {
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 10px;
+  background-color: rgba(194, 139, 94, 0.16);
+  border: 1px solid rgba(194, 139, 94, 0.4);
   color: #f6d5b8;
+  white-space: nowrap;
 }
 
-.soil-source-tag {
-  font-size: 0.7rem;
+.soil-count-badge.loading {
+  background-color: rgba(245, 158, 11, 0.16);
+  border-color: rgba(245, 158, 11, 0.4);
+  color: #fbbf24;
+}
+
+.expand-chevron {
+  font-size: 0.85rem;
   color: var(--text-muted);
-  opacity: 0.85;
+  user-select: none;
+}
+
+.soil-loading-state,
+.soil-empty-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.75rem 0.5rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.soil-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(242, 204, 143, 0.25);
+  border-top-color: #f2cc8f;
+  border-radius: 50%;
+  animation: refresh-spin 0.8s linear infinite;
 }
 
 .soil-unit-list {
@@ -121,27 +243,27 @@ const emit = defineEmits(['toggle-layer', 'focus-unit'])
   padding: 0;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.45rem;
 }
 
 .soil-unit-item {
   padding: 0.4rem 0.45rem;
   border-radius: 5px;
-  background: rgba(0, 0, 0, 0.18);
-  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(0, 0, 0, 0.22);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   cursor: pointer;
   transition: background 0.15s ease, border-color 0.15s ease, transform 0.1s ease;
 }
 
 .soil-unit-item:hover {
-  background: rgba(0, 0, 0, 0.32);
-  border-color: rgba(194, 139, 94, 0.4);
+  background: rgba(0, 0, 0, 0.38);
+  border-color: rgba(194, 139, 94, 0.45);
   transform: translateY(-1px);
 }
 
 .soil-unit-item.selected {
-  background: rgba(194, 139, 94, 0.18);
-  border-color: rgba(194, 139, 94, 0.7);
+  background: rgba(194, 139, 94, 0.2);
+  border-color: rgba(194, 139, 94, 0.8);
 }
 
 .soil-unit-top {
@@ -214,7 +336,7 @@ const emit = defineEmits(['toggle-layer', 'focus-unit'])
 .soil-card-footer {
   display: flex;
   justify-content: flex-end;
-  padding-top: 0.25rem;
+  padding-top: 0.3rem;
   border-top: 1px solid rgba(61, 102, 86, 0.45);
 }
 

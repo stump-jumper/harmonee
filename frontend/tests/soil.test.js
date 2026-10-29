@@ -5,14 +5,16 @@ import { ref } from 'vue'
 import { useSoilSurvey } from '../src/composables/useSoilSurvey.js'
 import { fetchSoilSurvey } from '../src/api/propertyApi.js'
 
-test('useSoilSurvey initializes with empty state', () => {
+test('useSoilSurvey initializes with empty state and collapsed panel', () => {
   const mapRef = ref(null)
-  const { soilSurveyData, soilLoading, soilError, selectedSoilSymbol } = useSoilSurvey(mapRef)
+  const { soilSurveyData, soilLoading, soilError, selectedSoilSymbol, isPanelExpanded } =
+    useSoilSurvey(mapRef)
 
   assert.equal(soilSurveyData.value, null)
   assert.equal(soilLoading.value, false)
   assert.equal(soilError.value, '')
   assert.equal(selectedSoilSymbol.value, null)
+  assert.equal(isPanelExpanded.value, false)
 })
 
 test('useSoilSurvey renders layers and centered symbol markers on map', () => {
@@ -124,16 +126,23 @@ test('useSoilSurvey renders layers and centered symbol markers on map', () => {
     },
   }
 
-  let layerVisible = true
+  let layerVisible = false
+  let setLayerCalls = []
   const {
     soilSurveyData,
     soilMarkers,
+    isPanelExpanded,
+    togglePanel,
     renderSoilOnMap,
     syncWithLayerToggle,
     focusOnSoilUnit,
     cleanupSoilMarkers,
   } = useSoilSurvey(mapRef, {
-    isLayerVisible: (id) => (id === 'soil-survey-layer' ? layerVisible : true),
+    isLayerVisible: (id) => (id === 'soil-survey-layer' ? layerVisible : false),
+    setLayerVisibility: (id, visible) => {
+      setLayerCalls.push({ id, visible })
+      layerVisible = visible
+    },
     mapboxLib: { Marker: FakeMarker, Popup: FakePopup },
     doc: fakeDoc,
   })
@@ -183,36 +192,52 @@ test('useSoilSurvey renders layers and centered symbol markers on map', () => {
     },
   }
 
+  // 1. Initially rendered when layerVisible is false (hidden until clicked)
   renderSoilOnMap(mockData)
 
-  // Verify sources and fill/outline layers
   assert.ok(sources.has('soil-survey-data'))
   assert.ok(layers.has('soil-survey-fill'))
   assert.ok(layers.has('soil-survey-outline'))
-  assert.equal(layers.get('soil-survey-fill').layout.visibility, 'visible')
+  assert.equal(layers.get('soil-survey-fill').layout.visibility, 'none')
+  assert.equal(layers.get('soil-survey-outline').layout.visibility, 'none')
 
-  // Verify centered markers were created
+  // Centered markers were created but hidden initially
   assert.equal(soilMarkers.length, 2)
   assert.equal(soilMarkers[0].anchor, 'center')
   assert.deepEqual(soilMarkers[0].coords, [-75.5568, 40.6315])
   assert.equal(soilMarkers[0].getElement().getAttribute('data-symbol'), 'DbB')
-
-  // Test visibility toggle
-  layerVisible = false
-  syncWithLayerToggle(false)
   assert.equal(soilMarkers[0].getElement().style.display, 'none')
 
+  // 2. User clicks the panel header -> togglePanel() expands panel and shows layer
+  assert.equal(isPanelExpanded.value, false)
+  togglePanel()
+  assert.equal(isPanelExpanded.value, true)
+  assert.equal(setLayerCalls.length, 1)
+  assert.deepEqual(setLayerCalls[0], { id: 'soil-survey-layer', visible: true })
+  assert.equal(soilMarkers[0].getElement().style.display, '')
+  assert.equal(layers.get('soil-survey-fill').layout.visibility, 'visible')
+
+  // 3. User clicks map layer checkbox to turn it off -> syncWithLayerToggle(false)
+  layerVisible = false
+  syncWithLayerToggle(false)
+  assert.equal(isPanelExpanded.value, false)
+  assert.equal(soilMarkers[0].getElement().style.display, 'none')
+  assert.equal(layers.get('soil-survey-fill').layout.visibility, 'none')
+
+  // 4. User clicks map layer checkbox to turn it on -> syncWithLayerToggle(true)
   layerVisible = true
   syncWithLayerToggle(true)
-  assert.equal(soilMarkers[0].getElement().style.display, 'flex')
+  assert.equal(isPanelExpanded.value, true)
+  assert.equal(soilMarkers[0].getElement().style.display, '')
+  assert.equal(layers.get('soil-survey-fill').layout.visibility, 'visible')
 
-  // Test focusing on a soil unit
+  // 5. Test focusing on a soil unit
   soilSurveyData.value = mockData
   focusOnSoilUnit(mockData.summary[1]) // WaC
   assert.ok(fakeMapInstance.lastFlyTo)
   assert.deepEqual(fakeMapInstance.lastFlyTo.center, [-75.5562, 40.6318])
 
-  // Test cleanup
+  // 6. Test cleanup
   cleanupSoilMarkers()
   assert.equal(soilMarkers.length, 0)
 })

@@ -16,27 +16,47 @@ export function useSoilSurvey(
   const soilLoading = ref(false)
   const soilError = ref('')
   const selectedSoilSymbol = ref(null)
+  const isPanelExpanded = ref(false)
 
   const soilMarkers = []
   let soilPopup = null
 
   function updateSoilMarkersVisibility() {
-    const visible = isLayerVisible ? isLayerVisible('soil-survey-layer') : true
+    const visible = isLayerVisible ? isLayerVisible('soil-survey-layer') : false
+    if (!visible && soilPopup) {
+      soilPopup.remove()
+      soilPopup = null
+      selectedSoilSymbol.value = null
+    }
     for (const marker of soilMarkers) {
       const el = marker.getElement()
       if (el) {
-        el.style.display = visible ? 'flex' : 'none'
+        el.style.display = visible ? '' : 'none'
+      }
+    }
+    const mapInstance = mapRef.value
+    if (mapInstance && mapInstance.setLayoutProperty) {
+      const visibility = visible ? 'visible' : 'none'
+      if (mapInstance.getLayer('soil-survey-fill')) {
+        mapInstance.setLayoutProperty('soil-survey-fill', 'visibility', visibility)
+      }
+      if (mapInstance.getLayer('soil-survey-outline')) {
+        mapInstance.setLayoutProperty('soil-survey-outline', 'visibility', visibility)
       }
     }
   }
 
   function syncWithLayerToggle(visible) {
-    for (const marker of soilMarkers) {
-      const el = marker.getElement()
-      if (el) {
-        el.style.display = visible ? 'flex' : 'none'
-      }
+    isPanelExpanded.value = visible
+    updateSoilMarkersVisibility()
+  }
+
+  function togglePanel() {
+    isPanelExpanded.value = !isPanelExpanded.value
+    if (setLayerVisibility) {
+      setLayerVisibility('soil-survey-layer', isPanelExpanded.value)
     }
+    updateSoilMarkersVisibility()
   }
 
   function cleanupSoilMarkers() {
@@ -233,17 +253,24 @@ export function useSoilSurvey(
     }
   }
 
+  async function refreshSoilSurvey() {
+    return loadSoilSurvey()
+  }
+
   return {
     soilSurveyData,
     soilLoading,
     soilError,
     selectedSoilSymbol,
+    isPanelExpanded,
     soilMarkers,
+    togglePanel,
     updateSoilMarkersVisibility,
     syncWithLayerToggle,
     renderSoilOnMap,
     focusOnSoilUnit,
     cleanupSoilMarkers,
     loadSoilSurvey,
+    refreshSoilSurvey,
   }
 }
