@@ -16,6 +16,7 @@ import MapLayersPanel from '../components/map/MapLayersPanel.vue'
 import ObjectPlacementToolbar from '../components/map/ObjectPlacementToolbar.vue'
 import PaintToolbar from '../components/map/PaintToolbar.vue'
 import PropertyInfoCard from '../components/map/PropertyInfoCard.vue'
+import { RecenterControl } from '../components/map/RecenterControl.js'
 import SoilSurveyCard from '../components/map/SoilSurveyCard.vue'
 import { useEbirdSightings } from '../composables/useEbirdSightings.js'
 import { useInaturalistObservations } from '../composables/useInaturalistObservations.js'
@@ -38,6 +39,7 @@ const birdOfTheDay = ref(null)
 const keystonePlants = ref(null)
 const habitatSegmentation = ref(null)
 const parcelFeature = ref(null)
+const propertyCoordinates = ref(null)
 const showBirdModal = ref(false)
 
 const isMouseOnMap = ref(false)
@@ -155,11 +157,14 @@ const {
   soilSurveyData,
   soilLoading,
   selectedSoilSymbol,
+  isPanelExpanded: isSoilPanelExpanded,
   syncWithLayerToggle: syncSoilWithLayerToggle,
+  togglePanel: toggleSoilPanel,
   renderSoilOnMap,
   focusOnSoilUnit,
   cleanupSoilMarkers,
   loadSoilSurvey,
+  refreshSoilSurvey,
 } = useSoilSurvey(mapRef, {
   isLayerVisible,
   setLayerVisibility,
@@ -217,6 +222,39 @@ async function refreshCaptureDate(lat, lon) {
   }
 }
 
+function recenterProperty(duration = 1000) {
+  const map = mapRef.value
+  if (!map) return
+
+  const rawParcel = parcelFeature.value
+    ? JSON.parse(JSON.stringify(toRaw(parcelFeature.value)))
+    : null
+
+  if (rawParcel) {
+    const bounds = getParcelCoordinatesBounds(rawParcel)
+    if (bounds) {
+      map.fitBounds(bounds, {
+        padding: 110,
+        maxZoom: 18.5,
+        bearing: 0,
+        pitch: 0,
+        duration,
+      })
+      return
+    }
+  }
+
+  if (propertyCoordinates.value?.lat != null && propertyCoordinates.value?.lon != null) {
+    map.flyTo({
+      center: [propertyCoordinates.value.lon, propertyCoordinates.value.lat],
+      zoom: 18.5,
+      bearing: 0,
+      pitch: 0,
+      duration,
+    })
+  }
+}
+
 function handleKeydown(e) {
   if (e.key === 'Escape') {
     if (selectedObject.value) {
@@ -241,6 +279,9 @@ onMounted(async () => {
     currentAddress.value = data.address || ''
     lat = data.lat
     lon = data.lon
+    if (lat != null && lon != null) {
+      propertyCoordinates.value = { lat, lon }
+    }
     captureDate.value = data.captureDate || ''
     parcelFeature.value = data.parcel || null
     ecoregions.value = data.ecoregions || null
@@ -386,9 +427,13 @@ onMounted(async () => {
     preserveDrawingBuffer: true,
     attributionControl: false,
   })
+  mapRef.value = instance
 
   instance.addControl(new mapboxgl.NavigationControl(), 'bottom-right')
-  instance.addControl(new mapboxgl.FullscreenControl(), 'bottom-right')
+  instance.addControl(
+    new RecenterControl({ onRecenter: () => recenterProperty(1000) }),
+    'bottom-right'
+  )
   instance.addControl(new mapboxgl.ScaleControl({ maxWidth: 120, unit: 'imperial' }), 'bottom-left')
 
   instance.once('load', () => {
@@ -472,12 +517,14 @@ onBeforeUnmount(() => {
       <PropertyInfoCard :address="currentAddress" :acreage="parcelAcreage" />
 
       <SoilSurveyCard
-        v-if="soilSurveyData && soilSurveyData.summary && soilSurveyData.summary.length > 0"
+        v-if="currentAddress"
+        :loading="soilLoading"
         :soil-data="soilSurveyData"
-        :is-layer-visible="isLayerVisible('soil-survey-layer')"
+        :expanded="isSoilPanelExpanded"
         :selected-symbol="selectedSoilSymbol"
-        @toggle-layer="toggleLayer(layers.find((l) => l.id === 'soil-survey-layer'))"
+        @toggle-expand="toggleSoilPanel"
         @focus-unit="focusOnSoilUnit"
+        @refresh="refreshSoilSurvey"
       />
 
       <InaturalistObservationsPanel
@@ -635,6 +682,23 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: column;
   gap: 0.6rem;
+}
+
+:deep(.mapboxgl-ctrl-recenter) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+:deep(.mapboxgl-ctrl-recenter .mapboxgl-ctrl-icon) {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #333333;
+}
+
+:deep(.mapboxgl-ctrl-recenter:hover .mapboxgl-ctrl-icon) {
+  color: #111111;
 }
 
 :deep(.mapboxgl-ctrl-bottom-right) {

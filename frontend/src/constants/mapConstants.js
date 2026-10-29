@@ -26,7 +26,7 @@ export function createInitialMapLayers() {
       id: 'soil-survey-layer',
       name: 'Soil Survey (USDA)',
       type: 'overlay',
-      visible: true,
+      visible: false,
       toggleable: true,
       color: '#c28b5e',
       mapLayerIds: ['soil-survey-fill', 'soil-survey-outline'],
