@@ -80,6 +80,17 @@ export function useEbirdSightings(
         el.style.display = visible ? '' : 'none'
       }
     }
+
+    const mapInstance = mapRef.value
+    if (mapInstance && typeof mapInstance.setLayoutProperty === 'function') {
+      const visibility = visible ? 'visible' : 'none'
+      if (mapInstance.getLayer('ebird-radius-fill')) {
+        mapInstance.setLayoutProperty('ebird-radius-fill', 'visibility', visibility)
+      }
+      if (mapInstance.getLayer('ebird-radius-outline')) {
+        mapInstance.setLayoutProperty('ebird-radius-outline', 'visibility', visibility)
+      }
+    }
   }
 
   function syncWithLayerToggle(visible) {
@@ -92,7 +103,11 @@ export function useEbirdSightings(
     if (setLayerVisibility) {
       setLayerVisibility('ebird-sightings-layer', isEbirdCardExpanded.value)
     }
-    updateEbirdMarkersVisibility()
+    if (ebirdMarkers.length === 0 && ebirdSightingsData.value && lastLat != null && lastLon != null) {
+      renderEbirdOnMap(ebirdSightingsData.value, lastLat, lastLon)
+    } else {
+      updateEbirdMarkersVisibility()
+    }
   }
 
   function toggleSightingMarker(marker, sighting) {
@@ -128,13 +143,11 @@ export function useEbirdSightings(
     }
   }
 
-  function renderEbirdOnMap(data, centerLat, centerLon) {
+  function renderEbirdOnMap(data, centerLat = lastLat, centerLon = lastLon) {
     const mapInstance = mapRef.value
     if (!mapInstance || !data || !doc) return
-    if (!mapInstance.isStyleLoaded()) {
-      mapInstance.once('style.load', () => renderEbirdOnMap(data, centerLat, centerLon))
-      return
-    }
+    if (centerLat != null) lastLat = centerLat
+    if (centerLon != null) lastLon = centerLon
 
     for (const m of ebirdMarkers) {
       m.remove()
@@ -145,56 +158,70 @@ export function useEbirdSightings(
       currentOpenEbirdPopup = null
     }
 
-    const circleFeature = createGeoJSONCircle([centerLon, centerLat], 1.0)
-    const srcId = 'ebird-radius-source'
-    const fillId = 'ebird-radius-fill'
-    const outlineId = 'ebird-radius-outline'
-
     const visible = isLayerVisible ? isLayerVisible('ebird-sightings-layer') : true
     const visibility = visible ? 'visible' : 'none'
 
-    if (mapInstance.getSource(srcId)) {
-      mapInstance.getSource(srcId).setData(circleFeature)
-    } else {
-      mapInstance.addSource(srcId, {
-        type: 'geojson',
-        data: circleFeature,
-      })
-      const beforeId = mapInstance.getLayer('user-paint-strokes-lines')
-        ? 'user-paint-strokes-lines'
-        : undefined
-      mapInstance.addLayer(
-        {
-          id: fillId,
-          type: 'fill',
-          source: srcId,
-          layout: { visibility },
-          paint: {
-            'fill-color': '#0284c7',
-            'fill-opacity': 0.05,
-          },
-        },
-        beforeId
-      )
-      mapInstance.addLayer(
-        {
-          id: outlineId,
-          type: 'line',
-          source: srcId,
-          layout: {
-            visibility,
-            'line-cap': 'round',
-            'line-join': 'round',
-          },
-          paint: {
-            'line-color': '#38bdf8',
-            'line-width': 1.5,
-            'line-dasharray': [3, 2],
-            'line-opacity': 0.7,
-          },
-        },
-        beforeId
-      )
+    if (centerLat != null && centerLon != null && typeof mapInstance.addSource === 'function') {
+      const setupRadius = () => {
+        if (!mapInstance || typeof mapInstance.getSource !== 'function') return
+        const circleFeature = createGeoJSONCircle([centerLon, centerLat], 1.0)
+        const srcId = 'ebird-radius-source'
+        const fillId = 'ebird-radius-fill'
+        const outlineId = 'ebird-radius-outline'
+
+        if (mapInstance.getSource(srcId)) {
+          mapInstance.getSource(srcId).setData(circleFeature)
+        } else {
+          mapInstance.addSource(srcId, {
+            type: 'geojson',
+            data: circleFeature,
+          })
+          const beforeId =
+            mapInstance.getLayer && mapInstance.getLayer('user-paint-strokes-lines')
+              ? 'user-paint-strokes-lines'
+              : undefined
+          if (mapInstance.addLayer) {
+            mapInstance.addLayer(
+              {
+                id: fillId,
+                type: 'fill',
+                source: srcId,
+                layout: { visibility },
+                paint: {
+                  'fill-color': '#0284c7',
+                  'fill-opacity': 0.05,
+                },
+              },
+              beforeId
+            )
+            mapInstance.addLayer(
+              {
+                id: outlineId,
+                type: 'line',
+                source: srcId,
+                layout: {
+                  visibility,
+                  'line-cap': 'round',
+                  'line-join': 'round',
+                },
+                paint: {
+                  'line-color': '#38bdf8',
+                  'line-width': 1.5,
+                  'line-dasharray': [3, 2],
+                  'line-opacity': 0.7,
+                },
+              },
+              beforeId
+            )
+          }
+        }
+      }
+
+      if (typeof mapInstance.isStyleLoaded === 'function' && mapInstance.isStyleLoaded()) {
+        setupRadius()
+      } else if (typeof mapInstance.once === 'function') {
+        mapInstance.once('load', setupRadius)
+      }
     }
 
     const sightings = data.sightings || []

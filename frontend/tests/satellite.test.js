@@ -10,10 +10,11 @@ test('fetchSatelliteLayers queries /api/satellite-layers with coordinates', asyn
       ok: true,
       json: async () => ({
         layers: [
-          { id: 'satellite-sentinel2', name: 'Sentinel-2 (Copernicus)' },
-          { id: 'satellite-landsat', name: 'Landsat 9 (USGS/NASA)' },
-          { id: 'satellite-naip', name: 'USDA NAIP Aerial' },
-          { id: 'satellite-usgs-tnm', name: 'USGS The National Map' },
+          { id: 'satellite-naip', name: 'USDA NAIP (Natural Color)' },
+          { id: 'satellite-naip-cir', name: 'USDA NAIP Color-Infrared (CIR)' },
+          { id: 'satellite-pema-leafoff', name: 'PEMA Leaf-Off Aerial (PA State)' },
+          { id: 'satellite-lidar-hillshade', name: 'LiDAR Micro-Hillshade (PAMAP)' },
+          { id: 'satellite-esri-wayback', name: 'Esri World Imagery Wayback' },
         ],
       }),
     }
@@ -24,6 +25,6 @@ test('fetchSatelliteLayers queries /api/satellite-layers with coordinates', asyn
     calledUrl,
     '/api/satellite-layers?lat=40.631667&lon=-75.556515'
   )
-  assert.equal(result.layers.length, 4)
-  assert.equal(result.layers[0].id, 'satellite-sentinel2')
+  assert.equal(result.layers.length, 5)
+  assert.equal(result.layers[0].id, 'satellite-naip')
 })

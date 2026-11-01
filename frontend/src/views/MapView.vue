@@ -17,7 +17,9 @@ import ObjectPlacementToolbar from '../components/map/ObjectPlacementToolbar.vue
 import PaintToolbar from '../components/map/PaintToolbar.vue'
 import PropertyInfoCard from '../components/map/PropertyInfoCard.vue'
 import { RecenterControl } from '../components/map/RecenterControl.js'
+import SatelliteImageryCard from '../components/map/SatelliteImageryCard.vue'
 import SoilSurveyCard from '../components/map/SoilSurveyCard.vue'
+import { useSatelliteImagery } from '../composables/useSatelliteImagery.js'
 import { useEbirdSightings } from '../composables/useEbirdSightings.js'
 import { useInaturalistObservations } from '../composables/useInaturalistObservations.js'
 import { useHabitatObjects } from '../composables/useHabitatObjects.js'
@@ -48,20 +50,59 @@ const cursorPos = ref({ x: -1000, y: -1000 })
 const parcelAcreage = computed(() => calculateParcelAcreage(parcelFeature.value))
 
 // Layer management composable
-const { layers, isLayerVisible, setLayerVisibility, toggleLayer, setLayerOpacity, updateSatelliteLayers, registerHabitatLayers } =
-  useMapLayers(mapRef, {
-    onLayerToggle: (layer) => {
-      if (layer.id === 'habitat-objects-layer') {
-        updateHabitatObjectMarkersVisibility()
-      } else if (layer.id === 'ebird-sightings-layer') {
-        syncWithLayerToggle(layer.visible)
-      } else if (layer.id === 'inaturalist-observations-layer') {
-        syncInaturalistWithLayerToggle(layer.visible)
-      } else if (layer.id === 'soil-survey-layer') {
-        syncSoilWithLayerToggle(layer.visible)
-      }
-    },
-  })
+const {
+  layers,
+  isLayerVisible,
+  setLayerVisibility,
+  toggleLayer,
+  setLayerOpacity,
+  updateActiveSatelliteLayerBadge,
+  registerHabitatLayers,
+} = useMapLayers(mapRef, {
+  onLayerToggle: (layer) => {
+    if (layer.id === 'satellite-base') {
+      syncSatelliteVisibility(layer.visible)
+    } else if (layer.id === 'habitat-objects-layer') {
+      updateHabitatObjectMarkersVisibility()
+    } else if (layer.id === 'ebird-sightings-layer') {
+      syncWithLayerToggle(layer.visible)
+    } else if (layer.id === 'inaturalist-observations-layer') {
+      syncInaturalistWithLayerToggle(layer.visible)
+    } else if (layer.id === 'soil-survey-layer') {
+      syncSoilWithLayerToggle(layer.visible)
+    }
+  },
+})
+
+// Satellite imagery left-panel composable
+const {
+  isSatellitePanelExpanded,
+  activeSourceId,
+  activeOpacity,
+  activeWaybackEpochIndex,
+  isBaseLayerVisible,
+  sources: satelliteSources,
+  activeSource: activeSatelliteSource,
+  getActiveSource,
+  getActiveTileUrl,
+  getActiveCaptureDate,
+  selectSource: handleSelectSatelliteSource,
+  setOpacity: handleSatelliteOpacityChange,
+  selectWaybackEpoch: handleSelectWaybackEpoch,
+  toggleVisibility: handleToggleSatelliteVisibility,
+  syncWithLayerToggle: syncSatelliteVisibility,
+  toggleExpand: toggleSatellitePanel,
+} = useSatelliteImagery(mapRef, {
+  token,
+  onSourceChange: (source) => {
+    updateActiveSatelliteLayerBadge(source.badge || 'Active', source.name)
+  },
+  onVisibilityChange: (visible) => {
+    setLayerVisibility('satellite-base', visible)
+  },
+})
+
+const displayCaptureDate = computed(() => getActiveCaptureDate(captureDate.value))
 
 // Habitat paint composable
 const {
@@ -303,13 +344,7 @@ onMounted(async () => {
     if (lat != null && lon != null) {
       loadEbirdSightings(lat, lon)
       loadInaturalistObservations(lat, lon)
-      fetchSatelliteLayers(lat, lon)
-        .then((satData) => {
-          if (satData?.layers) {
-            updateSatelliteLayers(satData.layers)
-          }
-        })
-        .catch(() => {})
+      // satellite feeds managed by useSatelliteImagery
     }
   } catch {
     const local = localStorage.getItem('harmonee_address')
@@ -336,78 +371,16 @@ onMounted(async () => {
 
   const initialBoundaryVisibility = isLayerVisible('property-boundary') ? 'visible' : 'none'
 
+  const initialSource = getActiveSource()
+  const initialTileUrl = getActiveTileUrl(initialSource)
+  const initialSatelliteVisibility = isLayerVisible('satellite-base') ? 'visible' : 'none'
+
   const styleSources = {
-    'mapbox-satellite-tiles': {
+    'active-satellite-source': {
       type: 'raster',
-      tiles: [
-        `https://api.mapbox.com/styles/v1/mapbox/satellite-v9/tiles/512/{z}/{x}/{y}@2x?access_token=${token}`,
-      ],
-      tileSize: 512,
-      maxzoom: 22,
-    },
-    'sentinel2-tiles': {
-      type: 'raster',
-      tiles: [
-        'https://planetarycomputer.microsoft.com/api/data/v1/item/tiles/WebMercatorQuad/{z}/{x}/{y}@1x?collection=sentinel-2-l2a&item=S2C_MSIL2A_20261026T155331_R054_T18TVL_20261026T202106&assets=visual&asset_bidx=visual%7C1,2,3&nodata=0&format=png',
-      ],
-      tileSize: 256,
-      maxzoom: 22,
-    },
-    'landsat-tiles': {
-      type: 'raster',
-      tiles: [
-        'https://planetarycomputer.microsoft.com/api/data/v1/item/tiles/WebMercatorQuad/{z}/{x}/{y}@1x?collection=landsat-c2-l2&item=LC09_L2SP_015032_20261026_02_T1&assets=red&assets=green&assets=blue&color_formula=gamma%20RGB%202.7,%20saturation%201.5,%20sigmoidal%20RGB%2015%200.55&format=png',
-      ],
-      tileSize: 256,
-      maxzoom: 22,
-    },
-    'naip-tiles': {
-      type: 'raster',
-      tiles: [
-        'https://planetarycomputer.microsoft.com/api/data/v1/collections/naip/items/pa_m_4007520_se_18_060_20220429/tiles/WebMercatorQuad/{z}/{x}/{y}@1x?assets=image&asset_bidx=image%7C1,2,3',
-      ],
-      tileSize: 256,
-      maxzoom: 22,
-    },
-    'naip-cir-tiles': {
-      type: 'raster',
-      tiles: [
-        'https://planetarycomputer.microsoft.com/api/data/v1/collections/naip/items/pa_m_4007520_se_18_060_20220429/tiles/WebMercatorQuad/{z}/{x}/{y}@1x?assets=image&asset_bidx=image%7C4,1,2',
-      ],
-      tileSize: 256,
-      maxzoom: 22,
-    },
-    'pema-leafoff-tiles': {
-      type: 'raster',
-      tiles: [
-        'https://imagery.pasda.psu.edu/arcgis/rest/services/pasda/PEMAImagery2018/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=256,256&format=png&transparent=true&f=image',
-      ],
-      tileSize: 256,
-      maxzoom: 22,
-    },
-    'lidar-hillshade-tiles': {
-      type: 'raster',
-      tiles: [
-        'https://imagery.pasda.psu.edu/arcgis/rest/services/pasda/PAMAP_Hillshade_WEB/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=256,256&format=png&transparent=true&f=image',
-      ],
-      tileSize: 256,
-      maxzoom: 22,
-    },
-    'usgs-tnm-tiles': {
-      type: 'raster',
-      tiles: [
-        'https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}',
-      ],
-      tileSize: 256,
-      maxzoom: 16,
-    },
-    'esri-wayback-tiles': {
-      type: 'raster',
-      tiles: [
-        'https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}',
-      ],
-      tileSize: 256,
-      maxzoom: 22,
+      tiles: [initialTileUrl],
+      tileSize: initialSource.tileSize || 256,
+      maxzoom: initialSource.maxzoom || 22,
     },
     'user-paint-strokes': {
       type: 'geojson',
@@ -417,84 +390,13 @@ onMounted(async () => {
 
   const styleLayers = [
     {
-      id: 'satellite-layer',
+      id: 'active-satellite-layer',
       type: 'raster',
-      source: 'mapbox-satellite-tiles',
+      source: 'active-satellite-source',
       minzoom: 0,
       maxzoom: 22,
-      layout: { visibility: isLayerVisible('satellite-base') ? 'visible' : 'none' },
-    },
-    {
-      id: 'sentinel2-layer',
-      type: 'raster',
-      source: 'sentinel2-tiles',
-      minzoom: 0,
-      maxzoom: 22,
-      layout: { visibility: isLayerVisible('satellite-sentinel2') ? 'visible' : 'none' },
-      paint: { 'raster-opacity': 1.0 },
-    },
-    {
-      id: 'landsat-layer',
-      type: 'raster',
-      source: 'landsat-tiles',
-      minzoom: 0,
-      maxzoom: 22,
-      layout: { visibility: isLayerVisible('satellite-landsat') ? 'visible' : 'none' },
-      paint: { 'raster-opacity': 1.0 },
-    },
-    {
-      id: 'naip-layer',
-      type: 'raster',
-      source: 'naip-tiles',
-      minzoom: 0,
-      maxzoom: 22,
-      layout: { visibility: isLayerVisible('satellite-naip') ? 'visible' : 'none' },
-      paint: { 'raster-opacity': 1.0 },
-    },
-    {
-      id: 'naip-cir-layer',
-      type: 'raster',
-      source: 'naip-cir-tiles',
-      minzoom: 0,
-      maxzoom: 22,
-      layout: { visibility: isLayerVisible('satellite-naip-cir') ? 'visible' : 'none' },
-      paint: { 'raster-opacity': 1.0 },
-    },
-    {
-      id: 'pema-leafoff-layer',
-      type: 'raster',
-      source: 'pema-leafoff-tiles',
-      minzoom: 0,
-      maxzoom: 22,
-      layout: { visibility: isLayerVisible('satellite-pema-leafoff') ? 'visible' : 'none' },
-      paint: { 'raster-opacity': 1.0 },
-    },
-    {
-      id: 'lidar-hillshade-layer',
-      type: 'raster',
-      source: 'lidar-hillshade-tiles',
-      minzoom: 0,
-      maxzoom: 22,
-      layout: { visibility: isLayerVisible('satellite-lidar-hillshade') ? 'visible' : 'none' },
-      paint: { 'raster-opacity': 1.0 },
-    },
-    {
-      id: 'usgs-tnm-layer',
-      type: 'raster',
-      source: 'usgs-tnm-tiles',
-      minzoom: 0,
-      maxzoom: 22,
-      layout: { visibility: isLayerVisible('satellite-usgs-tnm') ? 'visible' : 'none' },
-      paint: { 'raster-opacity': 1.0 },
-    },
-    {
-      id: 'esri-wayback-layer',
-      type: 'raster',
-      source: 'esri-wayback-tiles',
-      minzoom: 0,
-      maxzoom: 22,
-      layout: { visibility: isLayerVisible('satellite-esri-wayback') ? 'visible' : 'none' },
-      paint: { 'raster-opacity': 1.0 },
+      layout: { visibility: initialSatelliteVisibility },
+      paint: { 'raster-opacity': activeOpacity.value },
     },
   ]
 
@@ -631,8 +533,10 @@ onMounted(async () => {
     updatePaintStrokesSource()
   })
   instance.on('moveend', () => {
-    const center = instance.getCenter()
-    refreshCaptureDate(center.lat, center.lng)
+    if (activeSourceId.value === 'mapbox') {
+      const center = instance.getCenter()
+      refreshCaptureDate(center.lat, center.lng)
+    }
   })
 
   mapRef.value = instance
@@ -659,6 +563,18 @@ onBeforeUnmount(() => {
   >
     <div class="map-sidebar-left">
       <PropertyInfoCard :address="currentAddress" :acreage="parcelAcreage" />
+
+      <SatelliteImageryCard
+        :expanded="isSatellitePanelExpanded"
+        :sources="satelliteSources"
+        :active-source-id="activeSourceId"
+        :active-opacity="activeOpacity"
+        :active-source="activeSatelliteSource"
+        @toggle-expand="toggleSatellitePanel"
+        @select-source="handleSelectSatelliteSource"
+        @change-opacity="handleSatelliteOpacityChange"
+        @select-wayback-epoch="handleSelectWaybackEpoch"
+        />
 
       <SoilSurveyCard
         v-if="currentAddress"
@@ -792,8 +708,8 @@ onBeforeUnmount(() => {
       @update:is-food-dropdown-open="isFoodDropdownOpen = $event"
     />
 
-    <div v-if="captureDate && !errorMessage" class="capture-date">
-      Imagery captured: {{ captureDate }}
+    <div v-if="displayCaptureDate && isBaseLayerVisible && !errorMessage" class="capture-date">
+      Imagery captured: {{ displayCaptureDate }}
     </div>
   </section>
 </template>
@@ -862,15 +778,19 @@ onBeforeUnmount(() => {
 .capture-date {
   position: absolute;
   bottom: 12px;
-  right: 12px;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 20;
-  padding: 0.25rem 0.6rem;
+  padding: 0.25rem 0.75rem;
   font-size: 0.75rem;
   color: var(--text-cream);
-  background-color: rgba(30, 58, 47, 0.85);
+  background-color: rgba(20, 32, 24, 0.9);
   border: 1px solid var(--border-sage);
-  border-radius: 4px;
+  border-radius: 9999px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
   pointer-events: none;
+  backdrop-filter: blur(4px);
+  white-space: nowrap;
 }
 
 .map-empty {

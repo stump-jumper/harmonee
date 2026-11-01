@@ -65,7 +65,9 @@ const emit = defineEmits([
           <span v-else-if="layer.id === 'soil-survey-layer'" class="layer-tag count-tag">
             {{ soilUnitsCount }}
           </span>
-          <span v-else-if="layer.id === 'satellite-base'" class="layer-tag base-tag">Current</span>
+          <span v-else-if="layer.id === 'satellite-base'" class="layer-tag base-tag">
+            {{ layer.badge || 'Active' }}
+          </span>
           <span v-else-if="layer.percentage != null" class="layer-tag">
             {{ layer.percentage }}%
           </span>
@@ -73,28 +75,6 @@ const emit = defineEmits([
             {{ layer.badge }}
           </span>
         </label>
-        <div
-          v-if="layer.type === 'satellite-comparison' && layer.visible"
-          class="satellite-layer-controls"
-        >
-          <div class="opacity-slider-row">
-            <span class="opacity-label">Blend:</span>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.05"
-              :value="layer.opacity != null ? layer.opacity : 1"
-              @input="emit('change-opacity', layer, Number($event.target.value))"
-              class="opacity-slider"
-              title="Adjust opacity to compare against base imagery"
-            />
-            <span class="opacity-value">{{ Math.round((layer.opacity != null ? layer.opacity : 1) * 100) }}%</span>
-          </div>
-          <div v-if="layer.description" class="satellite-desc">
-            {{ layer.description }}
-          </div>
-        </div>
       </li>
     </ul>
 
@@ -337,6 +317,67 @@ const emit = defineEmits([
   font-size: 0.68rem;
   color: var(--text-muted);
   line-height: 1.25;
+}
+
+.wayback-epochs-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 0.45rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.wayback-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.7rem;
+}
+
+.wayback-title {
+  color: var(--text-cream);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.65rem;
+}
+
+.wayback-active-date {
+  color: #a5b4fc;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.wayback-epoch-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.epoch-pill-btn {
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: var(--text-cream);
+  border-radius: 4px;
+  font-size: 0.68rem;
+  padding: 0.15rem 0.4rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  line-height: 1.2;
+}
+
+.epoch-pill-btn:hover {
+  background: rgba(129, 140, 248, 0.2);
+  border-color: #818cf8;
+}
+
+.epoch-pill-btn.active {
+  background: #818cf8;
+  color: #0f172a;
+  border-color: #818cf8;
+  font-weight: 700;
+  box-shadow: 0 0 6px rgba(129, 140, 248, 0.5);
 }
 
 .segment-btn {

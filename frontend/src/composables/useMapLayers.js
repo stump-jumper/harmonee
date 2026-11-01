@@ -36,6 +36,31 @@ export function useMapLayers(mapRef, { onLayerToggle } = {}) {
     }
   }
 
+  function setLayerOpacity(layer, opacity) {
+    layer.opacity = opacity
+    const mapInstance = mapRef.value
+    if (!mapInstance) return
+    for (const mapLayerId of layer.mapLayerIds || []) {
+      if (mapInstance.getLayer(mapLayerId)) {
+        try {
+          mapInstance.setPaintProperty(mapLayerId, 'raster-opacity', opacity)
+        } catch {
+          // ignore non-raster
+        }
+      }
+    }
+  }
+
+  function updateActiveSatelliteLayerBadge(badge, sourceName = '') {
+    const base = layers.value.find((l) => l.id === 'satellite-base')
+    if (base) {
+      base.badge = badge || 'Active'
+      if (sourceName) {
+        base.name = `Satellite (${sourceName})`
+      }
+    }
+  }
+
   function registerHabitatLayers(segData) {
     const segLayers = segData?.layers || []
     const coreLayers = layers.value.filter((l) => l.type !== 'habitat')
@@ -105,8 +130,8 @@ export function useMapLayers(mapRef, { onLayerToggle } = {}) {
             source: srcId,
             layout: {
               visibility: hLayer.visible ? 'visible' : 'none',
-              'line-join': 'round',
               'line-cap': 'round',
+              'line-join': 'round',
             },
             paint: {
               'line-color': hLayer.color,
@@ -120,42 +145,13 @@ export function useMapLayers(mapRef, { onLayerToggle } = {}) {
     }
   }
 
-  function setLayerOpacity(layer, opacity) {
-    layer.opacity = opacity
-    const mapInstance = mapRef.value
-    if (!mapInstance) return
-    for (const mapLayerId of layer.mapLayerIds || []) {
-      if (mapInstance.getLayer(mapLayerId)) {
-        try {
-          mapInstance.setPaintProperty(mapLayerId, 'raster-opacity', opacity)
-        } catch {
-          // ignore non-raster
-        }
-      }
-    }
-  }
-
-  function updateSatelliteLayers(satelliteList) {
-    if (!Array.isArray(satelliteList)) return
-    for (const sat of satelliteList) {
-      const match = layers.value.find((l) => l.id === sat.id)
-      if (match) {
-        if (sat.badge) match.badge = sat.badge
-        if (sat.date) match.date = sat.date
-        if (sat.resolution) match.resolution = sat.resolution
-        if (sat.description) match.description = sat.description
-        if (sat.tileUrl) match.tileUrl = sat.tileUrl
-      }
-    }
-  }
-
   return {
     layers,
     isLayerVisible,
     setLayerVisibility,
     toggleLayer,
     setLayerOpacity,
-    updateSatelliteLayers,
+    updateActiveSatelliteLayerBadge,
     registerHabitatLayers,
   }
 }

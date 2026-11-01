@@ -2,44 +2,89 @@
 
 from datetime import datetime
 import json
-from typing import Any, Dict, List, Optional
-import urllib.parse
+from typing import Any, Dict, List
 import urllib.request
 
 STAC_API_URL = "https://planetarycomputer.microsoft.com/api/stac/v1/search"
 
+# 12 unique aerial capture epochs for the property, ordered from newest to oldest
+WAYBACK_EPOCHS: List[Dict[str, str]] = [
+    {
+        "releaseNumber": "20512",
+        "date": "2025-10-23",
+        "label": "2025 (Oct) - Latest",
+        "tileUrl": "https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/default028mm/MapServer/tile/20512/{z}/{y}/{x}",
+    },
+    {
+        "releaseNumber": "27982",
+        "date": "2025-04-24",
+        "label": "2025 (Apr)",
+        "tileUrl": "https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/default028mm/MapServer/tile/27982/{z}/{y}/{x}",
+    },
+    {
+        "releaseNumber": "60013",
+        "date": "2024-03-07",
+        "label": "2024 (Mar)",
+        "tileUrl": "https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/default028mm/MapServer/tile/60013/{z}/{y}/{x}",
+    },
+    {
+        "releaseNumber": "25982",
+        "date": "2023-06-13",
+        "label": "2023 (Jun)",
+        "tileUrl": "https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/default028mm/MapServer/tile/25982/{z}/{y}/{x}",
+    },
+    {
+        "releaseNumber": "44873",
+        "date": "2023-03-15",
+        "label": "2023 (Mar)",
+        "tileUrl": "https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/default028mm/MapServer/tile/44873/{z}/{y}/{x}",
+    },
+    {
+        "releaseNumber": "42663",
+        "date": "2022-01-12",
+        "label": "2022 (Jan)",
+        "tileUrl": "https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/default028mm/MapServer/tile/42663/{z}/{y}/{x}",
+    },
+    {
+        "releaseNumber": "27659",
+        "date": "2021-04-28",
+        "label": "2021 (Apr)",
+        "tileUrl": "https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/default028mm/MapServer/tile/27659/{z}/{y}/{x}",
+    },
+    {
+        "releaseNumber": "18289",
+        "date": "2020-07-01",
+        "label": "2020 (Jul)",
+        "tileUrl": "https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/default028mm/MapServer/tile/18289/{z}/{y}/{x}",
+    },
+    {
+        "releaseNumber": "12576",
+        "date": "2019-06-05",
+        "label": "2019 (Jun)",
+        "tileUrl": "https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/default028mm/MapServer/tile/12576/{z}/{y}/{x}",
+    },
+    {
+        "releaseNumber": "11509",
+        "date": "2016-06-13",
+        "label": "2016 (Jun)",
+        "tileUrl": "https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/default028mm/MapServer/tile/11509/{z}/{y}/{x}",
+    },
+    {
+        "releaseNumber": "23880",
+        "date": "2015-04-30",
+        "label": "2015 (Apr)",
+        "tileUrl": "https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/default028mm/MapServer/tile/23880/{z}/{y}/{x}",
+    },
+    {
+        "releaseNumber": "10",
+        "date": "2014-02-20",
+        "label": "2014 (Feb)",
+        "tileUrl": "https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/default028mm/MapServer/tile/10/{z}/{y}/{x}",
+    },
+]
+
 # Fallback definitions specifically tuned for the test property (2534 Lapp Road, Allentown, PA)
 DEFAULT_TEST_LAYERS: List[Dict[str, Any]] = [
-    {
-        "id": "satellite-sentinel2",
-        "name": "Sentinel-2 (Copernicus)",
-        "layerId": "sentinel2-layer",
-        "sourceId": "sentinel2-tiles",
-        "badge": "10m • Oct 26",
-        "date": "2026-10-26",
-        "cloudCover": 1.7,
-        "resolution": "10m",
-        "description": "5-day revisit optical multispectral imagery from ESA Copernicus Sentinel-2",
-        "tileUrl": "https://planetarycomputer.microsoft.com/api/data/v1/item/tiles/WebMercatorQuad/{z}/{x}/{y}@1x?collection=sentinel-2-l2a&item=S2C_MSIL2A_20261026T155331_R054_T18TVL_20261026T202106&assets=visual&asset_bidx=visual%7C1,2,3&nodata=0&format=png",
-        "tileSize": 256,
-        "maxzoom": 22,
-        "opacity": 1.0,
-    },
-    {
-        "id": "satellite-landsat",
-        "name": "Landsat 9 (USGS/NASA)",
-        "layerId": "landsat-layer",
-        "sourceId": "landsat-tiles",
-        "badge": "30m • Oct 26",
-        "date": "2026-10-26",
-        "cloudCover": 0.1,
-        "resolution": "30m",
-        "description": "16-day revisit optical multispectral imagery from USGS / NASA Landsat 9",
-        "tileUrl": "https://planetarycomputer.microsoft.com/api/data/v1/item/tiles/WebMercatorQuad/{z}/{x}/{y}@1x?collection=landsat-c2-l2&item=LC09_L2SP_015032_20261026_02_T1&assets=red&assets=green&assets=blue&color_formula=gamma%20RGB%202.7,%20saturation%201.5,%20sigmoidal%20RGB%2015%200.55&format=png",
-        "tileSize": 256,
-        "maxzoom": 22,
-        "opacity": 1.0,
-    },
     {
         "id": "satellite-naip",
         "name": "USDA NAIP Aerial (Natural Color)",
@@ -101,112 +146,28 @@ DEFAULT_TEST_LAYERS: List[Dict[str, Any]] = [
         "opacity": 1.0,
     },
     {
-        "id": "satellite-usgs-tnm",
-        "name": "USGS The National Map (TNM)",
-        "layerId": "usgs-tnm-layer",
-        "sourceId": "usgs-tnm-tiles",
-        "badge": "1m • Ortho",
-        "date": "Continuous Mosaic",
-        "cloudCover": 0.0,
-        "resolution": "1m",
-        "description": "Seamless USGS National Geospatial Program high-resolution orthoimagery",
-        "tileUrl": "https://basemap.nationalmap.gov/arcgis/rest/services/USGSImageryOnly/MapServer/tile/{z}/{y}/{x}",
-        "tileSize": 256,
-        "maxzoom": 16,
-        "opacity": 1.0,
-    },
-    {
         "id": "satellite-esri-wayback",
         "name": "Esri World Imagery Wayback",
         "layerId": "esri-wayback-layer",
         "sourceId": "esri-wayback-tiles",
         "badge": "0.5m • Wayback",
-        "date": "Archive",
+        "date": "2025-10-23",
         "cloudCover": 0.0,
         "resolution": "0.5m",
-        "description": "Esri World Imagery digital archive basemap for multi-year aerial comparison",
-        "tileUrl": "https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        "description": "Esri World Imagery multi-year aerial time machine (12 historical flight epochs from 2014 to 2026)",
+        "tileUrl": WAYBACK_EPOCHS[0]["tileUrl"],
         "tileSize": 256,
         "maxzoom": 22,
         "opacity": 1.0,
+        "epochs": WAYBACK_EPOCHS,
+        "selectedEpochIndex": 0,
     },
 ]
-
-
-def _format_date_badge(raw_date: str) -> str:
-    """Format an ISO date string like 2026-10-26 into 'Oct 26'."""
-    try:
-        dt = datetime.fromisoformat(raw_date.replace("Z", "+00:00"))
-        return dt.strftime("%b %d")
-    except Exception:
-        return raw_date[:10] if raw_date else ""
 
 
 def query_recent_satellite_layers(lat: float, lon: float) -> List[Dict[str, Any]]:
     """Query recent satellite and aerial imagery layers for the given coordinates."""
     layers = [dict(layer) for layer in DEFAULT_TEST_LAYERS]
-
-    try:
-        # Sentinel-2 L2A lookup
-        body = {
-            "collections": ["sentinel-2-l2a"],
-            "intersects": {"type": "Point", "coordinates": [lon, lat]},
-            "query": {"eo:cloud_cover": {"lt": 25}},
-            "sortby": [{"field": "datetime", "direction": "desc"}],
-            "limit": 1,
-        }
-        req = urllib.request.Request(
-            STAC_API_URL,
-            data=json.dumps(body).encode("utf-8"),
-            headers={"Content-Type": "application/json", "User-Agent": "HarmoneeApp/1.0"},
-        )
-        with urllib.request.urlopen(req, timeout=4) as r:
-            res = json.loads(r.read())
-            if res.get("features"):
-                f = res["features"][0]
-                item_id = f["id"]
-                dt_str = f.get("properties", {}).get("datetime", "")
-                cloud = round(f.get("properties", {}).get("eo:cloud_cover", 0), 1)
-                short_dt = dt_str[:10]
-                badge_dt = _format_date_badge(dt_str)
-                tile_url = f"https://planetarycomputer.microsoft.com/api/data/v1/item/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}@1x?collection=sentinel-2-l2a&item={item_id}&assets=visual&asset_bidx=visual%7C1,2,3&nodata=0&format=png"
-                layers[0]["badge"] = f"10m • {badge_dt}"
-                layers[0]["date"] = short_dt
-                layers[0]["cloudCover"] = cloud
-                layers[0]["tileUrl"] = tile_url
-    except Exception:
-        pass
-
-    try:
-        # Landsat 9/8 lookup
-        body = {
-            "collections": ["landsat-c2-l2"],
-            "intersects": {"type": "Point", "coordinates": [lon, lat]},
-            "query": {"eo:cloud_cover": {"lt": 20}},
-            "sortby": [{"field": "datetime", "direction": "desc"}],
-            "limit": 1,
-        }
-        req = urllib.request.Request(
-            STAC_API_URL,
-            data=json.dumps(body).encode("utf-8"),
-            headers={"Content-Type": "application/json", "User-Agent": "HarmoneeApp/1.0"},
-        )
-        with urllib.request.urlopen(req, timeout=4) as r:
-            res = json.loads(r.read())
-            if res.get("features"):
-                f = res["features"][0]
-                item_id = f["id"]
-                dt_str = f.get("properties", {}).get("datetime", "")
-                cloud = round(f.get("properties", {}).get("eo:cloud_cover", 0), 1)
-                short_dt = dt_str[:10]
-                badge_dt = _format_date_badge(dt_str)
-                tile_url = f"https://planetarycomputer.microsoft.com/api/data/v1/item/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}@1x?collection=landsat-c2-l2&item={item_id}&assets=red&assets=green&assets=blue&color_formula=gamma%20RGB%202.7,%20saturation%201.5,%20sigmoidal%20RGB%2015%200.55&format=png"
-                layers[1]["badge"] = f"30m • {badge_dt}"
-                layers[1]["date"] = short_dt
-                layers[1]["cloudCover"] = cloud
-                layers[1]["tileUrl"] = tile_url
-    except Exception:
-        pass
 
     try:
         # USDA NAIP lookup (updates both Natural Color and CIR)
@@ -231,12 +192,12 @@ def query_recent_satellite_layers(lat: float, lon: float) -> List[Dict[str, Any]
                 year_str = short_dt[:4] if short_dt else "NAIP"
                 tile_url_rgb = f"https://planetarycomputer.microsoft.com/api/data/v1/collections/naip/items/{item_id}/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}@1x?assets=image&asset_bidx=image%7C1,2,3"
                 tile_url_cir = f"https://planetarycomputer.microsoft.com/api/data/v1/collections/naip/items/{item_id}/tiles/WebMercatorQuad/{{z}}/{{x}}/{{y}}@1x?assets=image&asset_bidx=image%7C4,1,2"
-                layers[2]["badge"] = f"0.6m • {year_str}"
-                layers[2]["date"] = short_dt
-                layers[2]["tileUrl"] = tile_url_rgb
-                layers[3]["badge"] = f"0.6m • CIR {year_str}"
-                layers[3]["date"] = short_dt
-                layers[3]["tileUrl"] = tile_url_cir
+                layers[0]["badge"] = f"0.6m • {year_str}"
+                layers[0]["date"] = short_dt
+                layers[0]["tileUrl"] = tile_url_rgb
+                layers[1]["badge"] = f"0.6m • CIR {year_str}"
+                layers[1]["date"] = short_dt
+                layers[1]["tileUrl"] = tile_url_cir
     except Exception:
         pass
 
