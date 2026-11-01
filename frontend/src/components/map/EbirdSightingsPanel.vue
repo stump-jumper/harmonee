@@ -10,7 +10,13 @@ defineProps({
   selectedSightingId: { type: String, default: null },
 })
 
-const emit = defineEmits(['toggle-expand', 'update:activeTab', 'select-sighting', 'refresh'])
+const emit = defineEmits([
+  'toggle-expand',
+  'update:activeTab',
+  'update:active-tab',
+  'select-sighting',
+  'refresh',
+])
 </script>
 
 <template>
@@ -50,21 +56,21 @@ const emit = defineEmits(['toggle-expand', 'update:activeTab', 'select-sighting'
         <button
           type="button"
           :class="['ebird-tab-btn', { active: activeTab === 'recent' }]"
-          @click="emit('update:activeTab', 'recent')"
+          @click="emit('update:activeTab', 'recent'); emit('update:active-tab', 'recent')"
         >
           🕒 Recent
         </button>
         <button
           type="button"
           :class="['ebird-tab-btn', { active: activeTab === 'closest' }]"
-          @click="emit('update:activeTab', 'closest')"
+          @click="emit('update:activeTab', 'closest'); emit('update:active-tab', 'closest')"
         >
           📍 Closest
         </button>
         <button
           type="button"
           :class="['ebird-tab-btn', { active: activeTab === 'common' }]"
-          @click="emit('update:activeTab', 'common')"
+          @click="emit('update:activeTab', 'common'); emit('update:active-tab', 'common')"
         >
           📊 Common
         </button>

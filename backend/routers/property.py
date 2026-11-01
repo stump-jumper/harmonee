@@ -1,5 +1,7 @@
 """Property address, geocoding autocomplete, supported counties, imagery metadata, and soil survey endpoints."""
 
+from typing import Optional
+
 from fastapi import APIRouter, Query
 
 from backend import config
@@ -10,6 +12,7 @@ from backend.services.property_service import (
     get_enriched_property_data,
     save_and_enrich_property_address,
 )
+from backend.services.satellite import query_recent_satellite_layers
 from backend.services.soil import lookup_soil_survey
 from backend.storage import read_data, write_data
 
@@ -49,6 +52,19 @@ def get_supported_counties():
 @router.get("/imagery-date")
 def get_imagery_date(lat: float, lon: float):
     return {"captureDate": lookup_capture_date(float(lat), float(lon))}
+
+
+@router.get("/satellite-layers")
+def get_satellite_layers(lat: Optional[float] = None, lon: Optional[float] = None):
+    """Retrieve recent satellite and aerial imagery comparison layers."""
+    if lat is None or lon is None:
+        data = read_data()
+        lat = data.get("lat")
+        lon = data.get("lon")
+    if lat is None or lon is None:
+        lat = 40.631667
+        lon = -75.556515
+    return {"layers": query_recent_satellite_layers(float(lat), float(lon))}
 
 
 @router.get("/soil-survey")

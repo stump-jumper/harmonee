@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, shallowRef, toRaw } from 'vu
 import mapboxgl from 'mapbox-gl'
 import 'mapbox-gl/dist/mapbox-gl.css'
 
-import { fetchImageryCaptureDate, fetchPropertyData } from '../api/propertyApi.js'
+import { fetchImageryCaptureDate, fetchPropertyData, fetchSatelliteLayers } from '../api/propertyApi.js'
 import BirdOfTheDayCard from '../components/map/BirdOfTheDayCard.vue'
 import BirdOfTheDayModal from '../components/map/BirdOfTheDayModal.vue'
 import EbirdSightingsPanel from '../components/map/EbirdSightingsPanel.vue'
@@ -17,7 +17,9 @@ import ObjectPlacementToolbar from '../components/map/ObjectPlacementToolbar.vue
 import PaintToolbar from '../components/map/PaintToolbar.vue'
 import PropertyInfoCard from '../components/map/PropertyInfoCard.vue'
 import { RecenterControl } from '../components/map/RecenterControl.js'
+import SatelliteImageryCard from '../components/map/SatelliteImageryCard.vue'
 import SoilSurveyCard from '../components/map/SoilSurveyCard.vue'
+import { useSatelliteImagery } from '../composables/useSatelliteImagery.js'
 import { useEbirdSightings } from '../composables/useEbirdSightings.js'
 import { useInaturalistObservations } from '../composables/useInaturalistObservations.js'
 import { useHabitatObjects } from '../composables/useHabitatObjects.js'
@@ -48,20 +50,59 @@ const cursorPos = ref({ x: -1000, y: -1000 })
 const parcelAcreage = computed(() => calculateParcelAcreage(parcelFeature.value))
 
 // Layer management composable
-const { layers, isLayerVisible, setLayerVisibility, toggleLayer, registerHabitatLayers } =
-  useMapLayers(mapRef, {
-    onLayerToggle: (layer) => {
-      if (layer.id === 'habitat-objects-layer') {
-        updateHabitatObjectMarkersVisibility()
-      } else if (layer.id === 'ebird-sightings-layer') {
-        syncWithLayerToggle(layer.visible)
-      } else if (layer.id === 'inaturalist-observations-layer') {
-        syncInaturalistWithLayerToggle(layer.visible)
-      } else if (layer.id === 'soil-survey-layer') {
-        syncSoilWithLayerToggle(layer.visible)
-      }
-    },
-  })
+const {
+  layers,
+  isLayerVisible,
+  setLayerVisibility,
+  toggleLayer,
+  setLayerOpacity,
+  updateActiveSatelliteLayerBadge,
+  registerHabitatLayers,
+} = useMapLayers(mapRef, {
+  onLayerToggle: (layer) => {
+    if (layer.id === 'satellite-base') {
+      syncSatelliteVisibility(layer.visible)
+    } else if (layer.id === 'habitat-objects-layer') {
+      updateHabitatObjectMarkersVisibility()
+    } else if (layer.id === 'ebird-sightings-layer') {
+      syncWithLayerToggle(layer.visible)
+    } else if (layer.id === 'inaturalist-observations-layer') {
+      syncInaturalistWithLayerToggle(layer.visible)
+    } else if (layer.id === 'soil-survey-layer') {
+      syncSoilWithLayerToggle(layer.visible)
+    }
+  },
+})
+
+// Satellite imagery left-panel composable
+const {
+  isSatellitePanelExpanded,
+  activeSourceId,
+  activeOpacity,
+  activeWaybackEpochIndex,
+  isBaseLayerVisible,
+  sources: satelliteSources,
+  activeSource: activeSatelliteSource,
+  getActiveSource,
+  getActiveTileUrl,
+  getActiveCaptureDate,
+  selectSource: handleSelectSatelliteSource,
+  setOpacity: handleSatelliteOpacityChange,
+  selectWaybackEpoch: handleSelectWaybackEpoch,
+  toggleVisibility: handleToggleSatelliteVisibility,
+  syncWithLayerToggle: syncSatelliteVisibility,
+  toggleExpand: toggleSatellitePanel,
+} = useSatelliteImagery(mapRef, {
+  token,
+  onSourceChange: (source) => {
+    updateActiveSatelliteLayerBadge(source.badge || 'Active', source.name)
+  },
+  onVisibilityChange: (visible) => {
+    setLayerVisibility('satellite-base', visible)
+  },
+})
+
+const displayCaptureDate = computed(() => getActiveCaptureDate(captureDate.value))
 
 // Habitat paint composable
 const {
@@ -303,6 +344,7 @@ onMounted(async () => {
     if (lat != null && lon != null) {
       loadEbirdSightings(lat, lon)
       loadInaturalistObservations(lat, lon)
+      // satellite feeds managed by useSatelliteImagery
     }
   } catch {
     const local = localStorage.getItem('harmonee_address')
@@ -329,14 +371,16 @@ onMounted(async () => {
 
   const initialBoundaryVisibility = isLayerVisible('property-boundary') ? 'visible' : 'none'
 
+  const initialSource = getActiveSource()
+  const initialTileUrl = getActiveTileUrl(initialSource)
+  const initialSatelliteVisibility = isLayerVisible('satellite-base') ? 'visible' : 'none'
+
   const styleSources = {
-    'mapbox-satellite-tiles': {
+    'active-satellite-source': {
       type: 'raster',
-      tiles: [
-        `https://api.mapbox.com/styles/v1/mapbox/satellite-v9/tiles/512/{z}/{x}/{y}@2x?access_token=${token}`,
-      ],
-      tileSize: 512,
-      maxzoom: 22,
+      tiles: [initialTileUrl],
+      tileSize: initialSource.tileSize || 256,
+      maxzoom: initialSource.maxzoom || 22,
     },
     'user-paint-strokes': {
       type: 'geojson',
@@ -346,11 +390,13 @@ onMounted(async () => {
 
   const styleLayers = [
     {
-      id: 'satellite-layer',
+      id: 'active-satellite-layer',
       type: 'raster',
-      source: 'mapbox-satellite-tiles',
+      source: 'active-satellite-source',
       minzoom: 0,
       maxzoom: 22,
+      layout: { visibility: initialSatelliteVisibility },
+      paint: { 'raster-opacity': activeOpacity.value },
     },
   ]
 
@@ -487,8 +533,10 @@ onMounted(async () => {
     updatePaintStrokesSource()
   })
   instance.on('moveend', () => {
-    const center = instance.getCenter()
-    refreshCaptureDate(center.lat, center.lng)
+    if (activeSourceId.value === 'mapbox') {
+      const center = instance.getCenter()
+      refreshCaptureDate(center.lat, center.lng)
+    }
   })
 
   mapRef.value = instance
@@ -515,6 +563,18 @@ onBeforeUnmount(() => {
   >
     <div class="map-sidebar-left">
       <PropertyInfoCard :address="currentAddress" :acreage="parcelAcreage" />
+
+      <SatelliteImageryCard
+        :expanded="isSatellitePanelExpanded"
+        :sources="satelliteSources"
+        :active-source-id="activeSourceId"
+        :active-opacity="activeOpacity"
+        :active-source="activeSatelliteSource"
+        @toggle-expand="toggleSatellitePanel"
+        @select-source="handleSelectSatelliteSource"
+        @change-opacity="handleSatelliteOpacityChange"
+        @select-wayback-epoch="handleSelectWaybackEpoch"
+        />
 
       <SoilSurveyCard
         v-if="currentAddress"
@@ -582,6 +642,7 @@ onBeforeUnmount(() => {
         :inaturalist-total-observations="inaturalistData?.totalObservations || 0"
         :soil-units-count="soilSurveyData?.summary?.length || 0"
         @toggle-layer="toggleLayer"
+        @change-opacity="setLayerOpacity"
         @toggle-paint-mode="togglePaintMode"
         @undo-stroke="undoStroke"
         @clear-strokes="clearAllStrokes"
@@ -647,8 +708,8 @@ onBeforeUnmount(() => {
       @update:is-food-dropdown-open="isFoodDropdownOpen = $event"
     />
 
-    <div v-if="captureDate && !errorMessage" class="capture-date">
-      Imagery captured: {{ captureDate }}
+    <div v-if="displayCaptureDate && isBaseLayerVisible && !errorMessage" class="capture-date">
+      Imagery captured: {{ displayCaptureDate }}
     </div>
   </section>
 </template>
@@ -717,15 +778,19 @@ onBeforeUnmount(() => {
 .capture-date {
   position: absolute;
   bottom: 12px;
-  right: 12px;
+  left: 50%;
+  transform: translateX(-50%);
   z-index: 20;
-  padding: 0.25rem 0.6rem;
+  padding: 0.25rem 0.75rem;
   font-size: 0.75rem;
   color: var(--text-cream);
-  background-color: rgba(30, 58, 47, 0.85);
+  background-color: rgba(20, 32, 24, 0.9);
   border: 1px solid var(--border-sage);
-  border-radius: 4px;
+  border-radius: 9999px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
   pointer-events: none;
+  backdrop-filter: blur(4px);
+  white-space: nowrap;
 }
 
 .map-empty {

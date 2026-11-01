@@ -9,9 +9,12 @@ export function createInitialMapLayers() {
       name: 'Satellite Imagery',
       type: 'base',
       visible: true,
-      toggleable: false,
+      toggleable: true,
       color: '#6ee7b7',
-      mapLayerIds: ['satellite-layer'],
+      badge: 'Active',
+      mapLayerIds: ['active-satellite-layer'],
+      opacity: 1.0,
+      activeSourceId: 'mapbox',
     },
     {
       id: 'property-boundary',
@@ -245,3 +248,167 @@ export function getIconicTaxonIcon(iconicTaxonName) {
       return '🍃'
   }
 }
+
+
+export const SATELLITE_SOURCES = [
+  {
+    id: 'mapbox',
+    name: 'Mapbox Satellite (Current)',
+    color: '#6ee7b7',
+    badge: 'Current',
+    description: 'High-resolution composite basemap aerial imagery',
+    tileSize: 512,
+    maxzoom: 22,
+    tiles: (token) => [
+      `https://api.mapbox.com/styles/v1/mapbox/satellite-v9/tiles/512/{z}/{x}/{y}@2x?access_token=${token}`,
+    ],
+  },
+  {
+    id: 'esri-wayback',
+    name: 'Esri World Imagery Wayback',
+    color: '#818cf8',
+    badge: '0.5m • Wayback',
+    description: 'Esri World Imagery multi-year aerial time machine (12 historical epochs from 2014 to 2026)',
+    tileSize: 256,
+    maxzoom: 22,
+    selectedEpochIndex: 0,
+    epochs: [
+      {
+        releaseNumber: '20512',
+        date: '2025-10-23',
+        label: '2025 (Oct) - Latest',
+        tileUrl:
+          'https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/default028mm/MapServer/tile/20512/{z}/{y}/{x}',
+      },
+      {
+        releaseNumber: '27982',
+        date: '2025-04-24',
+        label: '2025 (Apr)',
+        tileUrl:
+          'https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/default028mm/MapServer/tile/27982/{z}/{y}/{x}',
+      },
+      {
+        releaseNumber: '60013',
+        date: '2024-03-07',
+        label: '2024 (Mar)',
+        tileUrl:
+          'https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/default028mm/MapServer/tile/60013/{z}/{y}/{x}',
+      },
+      {
+        releaseNumber: '25982',
+        date: '2023-06-13',
+        label: '2023 (Jun)',
+        tileUrl:
+          'https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/default028mm/MapServer/tile/25982/{z}/{y}/{x}',
+      },
+      {
+        releaseNumber: '44873',
+        date: '2023-03-15',
+        label: '2023 (Mar)',
+        tileUrl:
+          'https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/default028mm/MapServer/tile/44873/{z}/{y}/{x}',
+      },
+      {
+        releaseNumber: '42663',
+        date: '2022-01-12',
+        label: '2022 (Jan)',
+        tileUrl:
+          'https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/default028mm/MapServer/tile/42663/{z}/{y}/{x}',
+      },
+      {
+        releaseNumber: '27659',
+        date: '2021-04-28',
+        label: '2021 (Apr)',
+        tileUrl:
+          'https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/default028mm/MapServer/tile/27659/{z}/{y}/{x}',
+      },
+      {
+        releaseNumber: '18289',
+        date: '2020-07-01',
+        label: '2020 (Jul)',
+        tileUrl:
+          'https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/default028mm/MapServer/tile/18289/{z}/{y}/{x}',
+      },
+      {
+        releaseNumber: '12576',
+        date: '2019-06-05',
+        label: '2019 (Jun)',
+        tileUrl:
+          'https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/default028mm/MapServer/tile/12576/{z}/{y}/{x}',
+      },
+      {
+        releaseNumber: '11509',
+        date: '2016-06-13',
+        label: '2016 (Jun)',
+        tileUrl:
+          'https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/default028mm/MapServer/tile/11509/{z}/{y}/{x}',
+      },
+      {
+        releaseNumber: '23880',
+        date: '2015-04-30',
+        label: '2015 (Apr)',
+        tileUrl:
+          'https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/default028mm/MapServer/tile/23880/{z}/{y}/{x}',
+      },
+      {
+        releaseNumber: '10',
+        date: '2014-02-20',
+        label: '2014 (Feb)',
+        tileUrl:
+          'https://wayback.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/WMTS/1.0.0/default028mm/MapServer/tile/10/{z}/{y}/{x}',
+      },
+    ],
+  },
+  {
+    id: 'naip',
+    name: 'USDA NAIP (Natural Color)',
+    color: '#c084fc',
+    badge: '0.6m • 2022',
+    captureDate: 'Apr 29, 2022',
+    description: 'USDA Farm Service Agency high-res aerial orthoimagery',
+    tileSize: 256,
+    maxzoom: 22,
+    tiles: () => [
+      'https://planetarycomputer.microsoft.com/api/data/v1/collections/naip/items/pa_m_4007520_se_18_060_20220429/tiles/WebMercatorQuad/{z}/{x}/{y}@1x?assets=image&asset_bidx=image%7C1,2,3',
+    ],
+  },
+  {
+    id: 'naip-cir',
+    name: 'USDA NAIP Color-Infrared (CIR)',
+    color: '#f43f5e',
+    badge: '0.6m • Infrared',
+    captureDate: 'Apr 29, 2022',
+    description: 'False-color NIR rendering chlorophyll bright red to analyze vegetation health and garden beds',
+    tileSize: 256,
+    maxzoom: 22,
+    tiles: () => [
+      'https://planetarycomputer.microsoft.com/api/data/v1/collections/naip/items/pa_m_4007520_se_18_060_20220429/tiles/WebMercatorQuad/{z}/{x}/{y}@1x?assets=image&asset_bidx=image%7C4,1,2',
+    ],
+  },
+  {
+    id: 'pema-leafoff',
+    name: 'PEMA Leaf-Off Aerial (PA State)',
+    color: '#ec4899',
+    badge: '0.3m • Leaf-Off',
+    captureDate: 'Spring 2018 (Leaf-Off)',
+    description: 'PA state high-resolution leaf-off aerial survey (reveals ground structures, fences, and footpaths)',
+    tileSize: 256,
+    maxzoom: 22,
+    tiles: () => [
+      'https://imagery.pasda.psu.edu/arcgis/rest/services/pasda/PEMAImagery2018/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=256,256&format=png&transparent=true&f=image',
+    ],
+  },
+  {
+    id: 'lidar-hillshade',
+    name: 'LiDAR Micro-Hillshade (PAMAP)',
+    color: '#94a3b8',
+    badge: '1m • LiDAR',
+    captureDate: 'PAMAP LiDAR Survey (2008)',
+    description: 'Bare-earth LiDAR 3D hillshade revealing micro-topography, drainage swales, and slope lines',
+    tileSize: 256,
+    maxzoom: 22,
+    tiles: () => [
+      'https://imagery.pasda.psu.edu/arcgis/rest/services/pasda/PAMAP_Hillshade_WEB/MapServer/export?bbox={bbox-epsg-3857}&bboxSR=3857&imageSR=3857&size=256,256&format=png&transparent=true&f=image',
+    ],
+  },
+]

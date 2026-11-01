@@ -16,6 +16,7 @@ defineProps({
 
 const emit = defineEmits([
   'toggle-layer',
+  'change-opacity',
   'toggle-paint-mode',
   'undo-stroke',
   'clear-strokes',
@@ -64,8 +65,14 @@ const emit = defineEmits([
           <span v-else-if="layer.id === 'soil-survey-layer'" class="layer-tag count-tag">
             {{ soilUnitsCount }}
           </span>
+          <span v-else-if="layer.id === 'satellite-base'" class="layer-tag base-tag">
+            {{ layer.badge || 'Active' }}
+          </span>
           <span v-else-if="layer.percentage != null" class="layer-tag">
             {{ layer.percentage }}%
+          </span>
+          <span v-else-if="layer.badge" class="layer-tag badge-tag">
+            {{ layer.badge }}
           </span>
         </label>
       </li>
@@ -247,6 +254,130 @@ const emit = defineEmits([
   color: #fcd34d !important;
   border: 1px solid rgba(245, 158, 11, 0.4) !important;
   font-weight: 700 !important;
+}
+
+.base-tag {
+  background-color: rgba(110, 231, 183, 0.15) !important;
+  color: #6ee7b7 !important;
+  border: 1px solid rgba(110, 231, 183, 0.4) !important;
+  font-weight: 600 !important;
+}
+
+.badge-tag {
+  background-color: rgba(255, 255, 255, 0.08) !important;
+  color: var(--text-cream) !important;
+  border: 1px solid rgba(255, 255, 255, 0.2) !important;
+  font-size: 0.68rem !important;
+  white-space: nowrap;
+}
+
+.satellite-layer-controls {
+  margin: 0.25rem 0 0.4rem 1.6rem;
+  padding: 0.35rem 0.5rem;
+  background-color: rgba(0, 0, 0, 0.3);
+  border-radius: 4px;
+  border-left: 2px solid var(--border-sage);
+}
+
+.opacity-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.opacity-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  font-weight: 600;
+  color: var(--text-cream);
+}
+
+.opacity-slider {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.2);
+  accent-color: #34d399;
+  cursor: pointer;
+}
+
+.opacity-value {
+  min-width: 32px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  color: #a7f3d0;
+  font-weight: 600;
+}
+
+.satellite-desc {
+  margin-top: 0.2rem;
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  line-height: 1.25;
+}
+
+.wayback-epochs-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 0.45rem;
+  padding-bottom: 0.4rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.wayback-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.7rem;
+}
+
+.wayback-title {
+  color: var(--text-cream);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  font-size: 0.65rem;
+}
+
+.wayback-active-date {
+  color: #a5b4fc;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.wayback-epoch-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.epoch-pill-btn {
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  color: var(--text-cream);
+  border-radius: 4px;
+  font-size: 0.68rem;
+  padding: 0.15rem 0.4rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  line-height: 1.2;
+}
+
+.epoch-pill-btn:hover {
+  background: rgba(129, 140, 248, 0.2);
+  border-color: #818cf8;
+}
+
+.epoch-pill-btn.active {
+  background: #818cf8;
+  color: #0f172a;
+  border-color: #818cf8;
+  font-weight: 700;
+  box-shadow: 0 0 6px rgba(129, 140, 248, 0.5);
 }
 
 .segment-btn {

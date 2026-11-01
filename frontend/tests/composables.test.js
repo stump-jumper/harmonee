@@ -15,7 +15,7 @@ globalThis.fetch = async () => ({
 
 test('useMapLayers manages layer visibility and registration', () => {
   const mapRef = ref(null)
-  const { layers, isLayerVisible, setLayerVisibility, toggleLayer, registerHabitatLayers } =
+  const { layers, isLayerVisible, setLayerVisibility, toggleLayer, setLayerOpacity, updateActiveSatelliteLayerBadge, registerHabitatLayers } =
     useMapLayers(mapRef)
 
   // Property boundary layer should be visible by default
@@ -45,6 +45,31 @@ test('useMapLayers manages layer visibility and registration', () => {
   const dynamic = layers.value.find((l) => l.id === 'habitat-canopy')
   assert.ok(dynamic)
   assert.equal(dynamic.percentage, 45.2)
+
+  // Single active satellite base layer check
+  const baseSat = layers.value.find((l) => l.id === 'satellite-base')
+  assert.ok(baseSat, 'Single satellite-base layer exists')
+  assert.equal(baseSat.visible, true, 'Satellite base layer initially visible')
+  assert.equal(baseSat.toggleable, true, 'Satellite base layer is toggleable')
+
+  // Multi-source layers should not exist in the layer tree
+  assert.equal(layers.value.find((l) => l.id === 'satellite-sentinel2'), undefined)
+  assert.equal(layers.value.find((l) => l.id === 'satellite-landsat'), undefined)
+  assert.equal(layers.value.find((l) => l.id === 'satellite-usgs-tnm'), undefined)
+  assert.equal(layers.value.find((l) => l.id === 'satellite-naip'), undefined)
+  assert.equal(layers.value.find((l) => l.id === 'satellite-esri-wayback'), undefined)
+
+  toggleLayer(baseSat)
+  assert.equal(baseSat.visible, false, 'Satellite base toggles off')
+  toggleLayer(baseSat)
+  assert.equal(baseSat.visible, true, 'Satellite base toggles back on')
+
+  setLayerOpacity(baseSat, 0.65)
+  assert.equal(baseSat.opacity, 0.65)
+
+  updateActiveSatelliteLayerBadge('0.5m • Wayback', 'Esri World Imagery Wayback')
+  assert.equal(baseSat.badge, '0.5m • Wayback')
+  assert.equal(baseSat.name, 'Satellite (Esri World Imagery Wayback)')
 })
 
 test('useHabitatPaint manages brush selection, paint mode and strokes', () => {
